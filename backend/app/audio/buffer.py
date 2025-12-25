@@ -60,3 +60,43 @@ class AudioBuffer:
         magic, version, self.channels, self.sample_rate, self.capacity, self.write_head = struct.unpack(HEADER_FORMAT, header_data)
         if magic != b"MICW":
             raise ValueError("Not a valid Mic-Wise buffer file")
+        
+    def write(self, chunk: np.ndarray):
+        """Writes a chunk of audio [frames, channels] to the buffer."""
+        frames = chunk.shape[0]
+
+        start_idx = self.write_head % self.capacity
+
+        if start_idx + frames <= self.capacity:
+            self.data[start_idx : start_idx + frames] = chunk
+        else:
+            first_part_size = self.capacity - start_idx
+            self.data[start_idx:] = chunk[:first_part_size]
+            self.data[:frames - first_part_size] = chunk[first_part_size:]
+
+        self.write_head += frames
+        self._save_header()
+
+    def read(self, start_frame: int, count: int) -> np.ndarray:
+        """Reads 'count' frames starting from 'start_frame'."""
+        self._load_header()
+
+        if start_frame + count > self.write_head:
+            count = max(0, self.write_head - start_frame)
+
+        if count <=0:
+            return np.zeros((0, self.channels), dtype=np.int16)
+        
+        start_idx = start_frame % self.capacity
+
+        if start_idx + count <= self.capacity:
+            return self.data[start_idx : start_idx + count].copy()
+        else:
+            first_part_size = self.capacity - start_idx
+            return np.concatenate([self.data[start_idx:], self.data[:count - first_part_size]])
+        
+    def get_latest(self, count) -> np.ndarray:
+        """Helper to get the most recent 'count' frames."""
+        self._load_header()
+        return self.read(self.write_head - count, count)
+
