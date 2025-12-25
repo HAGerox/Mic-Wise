@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sounddevice
+numpy
+aiortc
+zeroconf
+sqlalchemy
+aiosqlite
+pydantic-settings
+python-multipart
