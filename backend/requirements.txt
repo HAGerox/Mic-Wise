@@ -5,6 +5,8 @@ numpy
 aiortc
 zeroconf
 sqlalchemy
+greenlet
 aiosqlite
 pydantic-settings
-python-multipart
+pytest
+httpx

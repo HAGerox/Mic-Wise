@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mic-Wise Monitor</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Mic-Wise MVP</p>
+          <h1>Live radio microphone monitor</h1>
+          <p class="subtitle">
+            Monitor channels, watch meters, and listen live or slightly behind live
+            from any browser on the network.
+          </p>
+        </div>
+        <div class="status-card">
+          <div><span>Status</span><strong id="status-text">Connecting…</strong></div>
+          <div><span>Write Head</span><strong id="write-head">0</strong></div>
+          <div><span>Mode</span><strong id="mode-text">Monitor</strong></div>
+        </div>
+      </header>
+
+      <section class="controls">
+        <div class="control-group">
+          <label for="replay-seconds">Replay offset (seconds)</label>
+          <input id="replay-seconds" type="range" min="0" max="30" value="0" />
+          <span id="replay-label">0s (live)</span>
+        </div>
+        <div class="control-group button-row">
+          <button id="listen-selected">Listen to selected</button>
+          <button id="stop-listening" class="secondary">Stop audio</button>
+        </div>
+      </section>
+
+      <section>
+        <div id="channel-grid" class="channel-grid"></div>
+      </section>
+
+      <audio id="monitor-audio" autoplay controls></audio>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
