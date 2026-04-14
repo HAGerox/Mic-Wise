@@ -3,44 +3,111 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mic-Wise Monitor</title>
+    <title>Mic-Wise Show Monitor</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="app-shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">Mic-Wise MVP</p>
-          <h1>Live radio microphone monitor</h1>
+          <p class="eyebrow">Mic-Wise</p>
+          <h1>Show monitor & channel programming</h1>
           <p class="subtitle">
-            Monitor channels, watch meters, and listen live or slightly behind live
-            from any browser on the network.
+            Monitor the live grid, patch show channels, open a channel detail popup,
+            and scrub the last five minutes for fast fault-finding.
           </p>
         </div>
         <div class="status-card">
           <div><span>Status</span><strong id="status-text">Connecting…</strong></div>
-          <div><span>Write Head</span><strong id="write-head">0</strong></div>
-          <div><span>Mode</span><strong id="mode-text">Monitor</strong></div>
+          <div><span>Listen Mode</span><strong id="listen-mode-text">Single</strong></div>
+          <div><span>View</span><strong id="mode-text">Monitor</strong></div>
+          <div><span>Listening</span><strong id="selection-count-text">0 channels</strong></div>
         </div>
       </header>
 
-      <section class="controls">
-        <div class="control-group">
-          <label for="replay-seconds">Replay offset (seconds)</label>
-          <input id="replay-seconds" type="range" min="0" max="30" value="0" />
-          <span id="replay-label">0s (live)</span>
+      <section class="controls toolbar">
+        <div class="control-group segmented-control" role="tablist" aria-label="Main views">
+          <button id="view-monitor" class="segment-button is-active" type="button">Monitor</button>
+          <button id="view-program" class="segment-button" type="button">Program Show</button>
         </div>
         <div class="control-group button-row">
-          <button id="listen-selected">Listen to selected</button>
-          <button id="stop-listening" class="secondary">Stop audio</button>
+          <button id="listen-mode-toggle" type="button">Single listen</button>
+          <button id="layout-mode-toggle" class="secondary" type="button">Arrange layout</button>
+          <button id="stop-listening" class="secondary" type="button">Stop audio</button>
         </div>
       </section>
 
-      <section>
+      <section id="monitor-view" class="view-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Monitor view</h2>
+            <p id="monitor-help-text">
+              Click a channel tile to listen and open its detailed history popup.
+            </p>
+          </div>
+        </div>
         <div id="channel-grid" class="channel-grid"></div>
       </section>
 
+      <section id="program-view" class="view-panel is-hidden">
+        <div class="panel-heading">
+          <div>
+            <h2>Program show file</h2>
+            <p>
+              Patch inputs, rename channels, and enable or disable rolling record per
+              row.
+            </p>
+          </div>
+        </div>
+
+        <div class="table-shell">
+          <table class="program-table">
+            <thead>
+              <tr>
+                <th>Channel</th>
+                <th>Name</th>
+                <th>Input</th>
+                <th>Record</th>
+                <th>Save</th>
+              </tr>
+            </thead>
+            <tbody id="program-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
       <audio id="monitor-audio" autoplay controls></audio>
+
+      <div id="channel-modal" class="modal is-hidden" aria-hidden="true">
+        <div class="modal-backdrop" data-close-modal="true"></div>
+        <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-channel-name">
+          <button id="close-modal" class="icon-button" type="button" aria-label="Close channel details">×</button>
+          <header class="modal-header">
+            <div>
+              <p id="modal-channel-number" class="modal-kicker">Channel</p>
+              <h2 id="modal-channel-name">Channel</h2>
+              <p id="modal-channel-meta" class="modal-meta"></p>
+            </div>
+            <div class="modal-badges">
+              <span id="modal-patch-badge" class="info-badge">Input</span>
+              <span id="modal-record-badge" class="info-badge">Recording</span>
+            </div>
+          </header>
+
+          <div class="waveform-shell">
+            <canvas id="waveform-canvas"></canvas>
+            <div class="waveform-footer">
+              <span>Last 5 minutes</span>
+              <strong id="modal-scrub-label">Click anywhere on the graph to scrub</strong>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="modal-listen-live" type="button">Listen live</button>
+            <button id="modal-stop-listening" class="secondary" type="button">Stop</button>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script type="module" src="/app.js"></script>

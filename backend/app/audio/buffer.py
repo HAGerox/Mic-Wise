@@ -15,6 +15,7 @@ is still retained in the rolling window.
 
 from __future__ import annotations
 
+import errno
 import mmap
 import os
 import struct
@@ -74,6 +75,7 @@ class AudioBuffer:
         self.path = Path(filename)
         self.header_size = HEADER_SIZE
         self._writable = create or writable
+        self._closed = False
 
         self.channels: int
         self.sample_rate: int
@@ -301,6 +303,46 @@ class AudioBuffer:
         latest = self.refresh_write_head()
         return self.read(latest - count, count)
 
+    def read_channel(self, start_frame: int, count: int, channel_index: int) -> AudioChunk:
+        """Read a single channel from a frame range in the rolling buffer."""
+        if not 0 <= channel_index < self.channels:
+            raise ValueError(
+                f"channel_index must be in range 0..{self.channels - 1}",
+            )
+        if count < 0:
+            raise ValueError("count must be non-negative")
+        if count == 0:
+            return np.zeros((0,), dtype=SAMPLE_DTYPE)
+
+        latest = self.refresh_write_head()
+        earliest = max(0, latest - self.capacity)
+
+        clamped_start = max(start_frame, earliest)
+        clamped_end = min(start_frame + count, latest)
+        if clamped_end <= clamped_start:
+            return np.zeros((0,), dtype=SAMPLE_DTYPE)
+
+        readable_count = clamped_end - clamped_start
+        start_idx = clamped_start % self.capacity
+        end_idx = start_idx + readable_count
+
+        if end_idx <= self.capacity:
+            return self.data[start_idx:end_idx, channel_index].copy()
+
+        first_part_size = self.capacity - start_idx
+        return np.concatenate(
+            (
+                self.data[start_idx:, channel_index],
+                self.data[: readable_count - first_part_size, channel_index],
+            ),
+            axis=0,
+        )
+
+    def read_latest_channel(self, count: int, channel_index: int) -> AudioChunk:
+        """Read the most recent samples for a single channel."""
+        latest = self.refresh_write_head()
+        return self.read_channel(latest - count, count, channel_index)
+
     def header_snapshot(self) -> dict[str, int]:
         """Return a dictionary view of the current header values."""
         latest = self.refresh_write_head()
@@ -318,13 +360,32 @@ class AudioBuffer:
         self.mm.flush()
 
     def close(self) -> None:
-        """Release the NumPy view, unmap the file, and close the descriptor."""
+        """Release the NumPy view, unmap the file, and close the descriptor.
+
+        Calling ``close`` multiple times is safe.
+        """
+        if self._closed:
+            return
+
         if hasattr(self, "data"):
             del self.data
-        if hasattr(self, "mm") and not self.mm.closed:
-            self.mm.close()
-        if hasattr(self, "fd"):
-            os.close(self.fd)
+
+        mm_obj = getattr(self, "mm", None)
+        if mm_obj is not None and not mm_obj.closed:
+            mm_obj.close()
+        self.mm = None
+
+        fd = getattr(self, "fd", None)
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError as exc:
+                if exc.errno != errno.EBADF:
+                    raise
+            finally:
+                self.fd = None
+
+        self._closed = True
 
     def __enter__(self) -> "AudioBuffer":
         """Enter context manager scope."""

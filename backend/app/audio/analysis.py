@@ -112,3 +112,34 @@ class MeterAnalysisService:
 				for channel in range(self.channels)
 			],
 		)
+
+
+def build_channel_waveform_preview(
+	*,
+	buffer_path: str,
+	sample_rate: int,
+	input_index: int,
+	seconds: float,
+	points: int,
+) -> tuple[float, list[float]]:
+	"""Build a channel RMS waveform preview over the requested time window."""
+	frame_count = max(1, int(round(sample_rate * seconds)))
+	with AudioBuffer(buffer_path) as buffer:
+		samples = buffer.read_latest_channel(frame_count, input_index)
+
+	if samples.size == 0:
+		return 0.0, [0.0 for _ in range(points)]
+
+	normalized = samples.astype(np.float32) / 32_768.0
+	boundaries = np.linspace(0, normalized.shape[0], num=points + 1, dtype=int)
+	values: list[float] = []
+	for index in range(points):
+		start = boundaries[index]
+		end = boundaries[index + 1]
+		if end <= start:
+			segment = normalized[start : start + 1]
+		else:
+			segment = normalized[start:end]
+		values.append(float(np.sqrt(np.mean(np.square(segment)))))
+
+	return samples.shape[0] / float(sample_rate), values

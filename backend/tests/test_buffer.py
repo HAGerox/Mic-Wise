@@ -109,6 +109,32 @@ def test_read_clamps_to_available_frame_range(tmp_path) -> None:
         assert empty.shape == (0, 2)
 
 
+def test_read_channel_returns_single_channel_samples(tmp_path) -> None:
+    buffer_path = tmp_path / "audio.buffer"
+    frames = np.array(
+        [
+            [10, 101],
+            [20, 202],
+            [30, 303],
+            [40, 404],
+        ],
+        dtype=np.int16,
+    )
+
+    with AudioBuffer(
+        filename=str(buffer_path),
+        channels=2,
+        sample_rate=4,
+        duration_sec=4,
+        create=True,
+    ) as writer:
+        writer.write(frames)
+        np.testing.assert_array_equal(
+            writer.read_latest_channel(3, 1),
+            np.array([202, 303, 404], dtype=np.int16),
+        )
+
+
 def test_write_larger_than_capacity_keeps_latest_audio(tmp_path) -> None:
     buffer_path = tmp_path / "audio.buffer"
     oversized = np.array(
@@ -152,3 +178,18 @@ def test_write_validates_dtype_and_shape(tmp_path) -> None:
             writer.write(np.zeros((4,), dtype=np.int16))
         with pytest.raises(ValueError):
             writer.write(np.zeros((4, 1), dtype=np.int16))
+
+
+def test_close_is_idempotent(tmp_path) -> None:
+    buffer_path = tmp_path / "audio.buffer"
+
+    buffer = AudioBuffer(
+        filename=str(buffer_path),
+        channels=1,
+        sample_rate=4,
+        duration_sec=2,
+        create=True,
+    )
+
+    buffer.close()
+    buffer.close()

@@ -10,7 +10,6 @@ class HealthResponse(BaseModel):
 
     status: str
     audio_engine_running: bool
-    buffer_write_head: int
 
 
 class SettingsResponse(BaseModel):
@@ -25,6 +24,13 @@ class SettingsResponse(BaseModel):
     audio_source_mode: str
     multi_listen_enabled: bool
     active_mode: str
+
+
+class SettingsUpdateRequest(BaseModel):
+    """Persisted UI-level settings for the active show."""
+
+    multi_listen_enabled: bool | None = None
+    active_mode: str | None = None
 
 
 class ChannelResponse(BaseModel):
@@ -81,12 +87,21 @@ class MeterSnapshotResponse(BaseModel):
     channels: list[MeterChannelSnapshot]
 
 
+class ChannelWaveformResponse(BaseModel):
+    """Waveform preview data for a single channel."""
+
+    channel_id: int
+    input_index: int | None
+    seconds: float
+    points: list[float]
+
+
 class WebRTCOfferRequest(BaseModel):
     """Offer payload sent by the browser for audio streaming."""
 
     sdp: str
     type: str
-    channel_numbers: list[int]
+    channel_ids: list[int]
     replay_seconds: float = 0.0
 
 

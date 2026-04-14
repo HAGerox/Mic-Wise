@@ -25,6 +25,7 @@ def test_api_health_and_static_frontend(tmp_path, monkeypatch) -> None:
 		health = client.get("/api/health")
 		assert health.status_code == 200
 		assert health.json()["status"] == "ok"
+		assert "buffer_write_head" not in health.json()
 
 		settings = client.get("/api/settings")
 		assert settings.status_code == 200
@@ -36,7 +37,26 @@ def test_api_health_and_static_frontend(tmp_path, monkeypatch) -> None:
 
 		frontend = client.get("/")
 		assert frontend.status_code == 200
-		assert "Mic-Wise MVP" in frontend.text
+		assert "Program show file" in frontend.text
+
+
+def test_settings_and_waveform_routes(tmp_path, monkeypatch) -> None:
+	configure_test_environment(monkeypatch, tmp_path)
+	with TestClient(create_app()) as client:
+		patch_response = client.patch(
+			"/api/settings",
+			json={"multi_listen_enabled": True, "active_mode": "configure"},
+		)
+		assert patch_response.status_code == 200
+		assert patch_response.json()["multi_listen_enabled"] is True
+		assert patch_response.json()["active_mode"] == "configure"
+
+		waveform = client.get("/api/channels/1/waveform?seconds=5&points=64")
+		assert waveform.status_code == 200
+		payload = waveform.json()
+		assert payload["channel_id"] == 1
+		assert payload["input_index"] == 0
+		assert len(payload["points"]) == 64
 
 
 def test_webrtc_offer_route_delegates_to_manager(tmp_path, monkeypatch) -> None:
@@ -59,7 +79,7 @@ def test_webrtc_offer_route_delegates_to_manager(tmp_path, monkeypatch) -> None:
 			json={
 				"sdp": "offer-sdp",
 				"type": "offer",
-				"channel_numbers": [1, 2],
+				"channel_ids": [1, 2],
 				"replay_seconds": 3.5,
 			},
 		)
@@ -68,6 +88,6 @@ def test_webrtc_offer_route_delegates_to_manager(tmp_path, monkeypatch) -> None:
 		assert captured == {
 			"sdp": "offer-sdp",
 			"type_": "offer",
-			"channel_numbers": [1, 2],
+			"input_indices": [0, 1],
 			"replay_seconds": 3.5,
 		}

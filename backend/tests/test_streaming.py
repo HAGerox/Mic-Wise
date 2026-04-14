@@ -32,10 +32,33 @@ def test_buffer_audio_stream_track_mixes_selected_channels(tmp_path) -> None:
 		buffer_path=str(buffer_path),
 		total_channels=3,
 		sample_rate=48_000,
-		channel_numbers=[1, 3],
+		input_indices=[0, 2],
 	)
 	try:
 		mixed = track._mix_selected_channels(frames)
 		assert mixed.tolist() == [2000, 2500, 3000]
 	finally:
 		track.stop()
+
+
+def test_buffer_audio_stream_track_stop_is_idempotent(tmp_path) -> None:
+	buffer_path = tmp_path / "audio.buffer"
+
+	with AudioBuffer(
+		filename=str(buffer_path),
+		channels=1,
+		sample_rate=48_000,
+		duration_sec=1,
+		create=True,
+	) as writer:
+		writer.write(np.array([[1000], [2000]], dtype=np.int16))
+
+	track = BufferAudioStreamTrack(
+		buffer_path=str(buffer_path),
+		total_channels=1,
+		sample_rate=48_000,
+		input_indices=[0],
+	)
+
+	track.stop()
+	track.stop()

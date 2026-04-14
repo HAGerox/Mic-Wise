@@ -23,7 +23,7 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		buffer_path: str,
 		total_channels: int,
 		sample_rate: int,
-		channel_numbers: list[int],
+		input_indices: list[int],
 		replay_seconds: float = 0.0,
 	) -> None:
 		super().__init__()
@@ -32,9 +32,9 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		self.sample_rate = sample_rate
 		self.samples_per_frame = max(1, int(round(AUDIO_PTIME * sample_rate)))
 		self.selected_indices = [
-			channel_number - 1
-			for channel_number in sorted(set(channel_numbers))
-			if 1 <= channel_number <= total_channels
+			input_index
+			for input_index in input_indices
+			if 0 <= input_index < total_channels
 		]
 
 		latest = self.buffer.refresh_write_head()
@@ -43,6 +43,7 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 			self._read_head = max(0, latest - replay_frames)
 		else:
 			self._read_head = max(0, latest - (self.samples_per_frame * 4))
+		self._buffer_closed = False
 
 	async def recv(self) -> AudioFrame:
 		"""Produce the next audio frame for transmission."""
@@ -94,8 +95,11 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 
 	def stop(self) -> None:
 		"""Release the shared buffer when the track ends."""
-		self.buffer.close()
-		super().stop()
+		if not self._buffer_closed:
+			self.buffer.close()
+			self._buffer_closed = True
+		if self.readyState != "ended":
+			super().stop()
 
 
 class WebRTCStreamManager:
@@ -112,7 +116,7 @@ class WebRTCStreamManager:
 		*,
 		sdp: str,
 		type_: str,
-		channel_numbers: list[int],
+		input_indices: list[int],
 		replay_seconds: float = 0.0,
 	) -> RTCSessionDescription:
 		"""Create an SDP answer for a new listener connection."""
@@ -121,7 +125,7 @@ class WebRTCStreamManager:
 			buffer_path=self.buffer_path,
 			total_channels=self.total_channels,
 			sample_rate=self.sample_rate,
-			channel_numbers=channel_numbers,
+			input_indices=input_indices,
 			replay_seconds=replay_seconds,
 		)
 		self._peer_connections[peer_connection] = track

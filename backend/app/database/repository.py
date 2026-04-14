@@ -82,6 +82,25 @@ async def list_scenes(database: DatabaseManager) -> list[Scene]:
         return list(result.all())
 
 
+async def get_channel(database: DatabaseManager, channel_id: int) -> Channel | None:
+    """Fetch a single channel by primary key."""
+    async with database.session() as session:
+        return await session.get(Channel, channel_id)
+
+
+async def get_channels_by_ids(
+    database: DatabaseManager,
+    channel_ids: list[int],
+) -> list[Channel]:
+    """Fetch a set of channels by ID."""
+    if not channel_ids:
+        return []
+
+    async with database.session() as session:
+        result = await session.scalars(select(Channel).where(Channel.id.in_(channel_ids)))
+        return list(result.all())
+
+
 async def update_channel(
     database: DatabaseManager,
     channel_id: int,
@@ -99,3 +118,21 @@ async def update_channel(
         await session.commit()
         await session.refresh(channel)
         return channel
+
+
+async def update_settings(
+    database: DatabaseManager,
+    changes: dict[str, object],
+) -> SettingsRecord:
+    """Update and return the singleton settings row."""
+    async with database.session() as session:
+        settings_row = await session.get(SettingsRecord, 1)
+        if settings_row is None:
+            raise RuntimeError("Show settings have not been initialised")
+
+        for field_name, value in changes.items():
+            setattr(settings_row, field_name, value)
+
+        await session.commit()
+        await session.refresh(settings_row)
+        return settings_row
