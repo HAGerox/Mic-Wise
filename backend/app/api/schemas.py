@@ -49,6 +49,15 @@ class ChannelResponse(BaseModel):
     position_y: float
 
 
+class ChannelCreateRequest(BaseModel):
+    """Fields that may be supplied when creating a channel."""
+
+    name: str | None = None
+    photo_path: str | None = None
+    input_index: int | None = None
+    is_record_enabled: bool | None = None
+
+
 class ChannelUpdateRequest(BaseModel):
     """Fields that may be updated for a channel."""
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from app.api.schemas import (
+	ChannelCreateRequest,
 	ChannelResponse,
 	ChannelUpdateRequest,
 	ChannelWaveformResponse,
@@ -18,6 +19,8 @@ from app.api.schemas import (
 )
 from app.audio.analysis import build_channel_waveform_preview
 from app.database.repository import (
+	create_channel,
+	delete_channel,
 	get_channel,
 	get_channels_by_ids,
 	get_settings,
@@ -75,6 +78,16 @@ async def read_channels(request: Request) -> list[ChannelResponse]:
 	return await list_channels(database)
 
 
+@router.post("/channels", response_model=ChannelResponse, status_code=status.HTTP_201_CREATED)
+async def create_channel_record(
+	payload: ChannelCreateRequest,
+	request: Request,
+) -> ChannelResponse:
+	"""Append a new display channel to the show file."""
+	database = request.app.state.database
+	return await create_channel(database, payload.model_dump(exclude_unset=True))
+
+
 @router.patch("/channels/{channel_id}", response_model=ChannelResponse)
 async def patch_channel(
 	channel_id: int,
@@ -91,6 +104,16 @@ async def patch_channel(
 	if channel is None:
 		raise HTTPException(status_code=404, detail="Channel not found")
 	return channel
+
+
+@router.delete("/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_channel_record(channel_id: int, request: Request) -> Response:
+	"""Delete a display channel from the show file."""
+	database = request.app.state.database
+	deleted = await delete_channel(database, channel_id)
+	if not deleted:
+		raise HTTPException(status_code=404, detail="Channel not found")
+	return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/channels/{channel_id}/waveform", response_model=ChannelWaveformResponse)

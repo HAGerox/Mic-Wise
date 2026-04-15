@@ -7,7 +7,7 @@ import fractions
 import time
 
 import numpy as np
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.mediastreams import AUDIO_PTIME, AudioStreamTrack, MediaStreamError
 from av import AudioFrame
 
@@ -42,7 +42,7 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		if replay_frames > 0:
 			self._read_head = max(0, latest - replay_frames)
 		else:
-			self._read_head = max(0, latest - (self.samples_per_frame * 4))
+			self._read_head = max(0, latest - (self.samples_per_frame * 2))
 		self._buffer_closed = False
 
 	async def recv(self) -> AudioFrame:
@@ -120,7 +120,7 @@ class WebRTCStreamManager:
 		replay_seconds: float = 0.0,
 	) -> RTCSessionDescription:
 		"""Create an SDP answer for a new listener connection."""
-		peer_connection = RTCPeerConnection()
+		peer_connection = RTCPeerConnection(configuration=RTCConfiguration(iceServers=[]))
 		track = BufferAudioStreamTrack(
 			buffer_path=self.buffer_path,
 			total_channels=self.total_channels,
@@ -141,7 +141,6 @@ class WebRTCStreamManager:
 		peer_connection.addTrack(track)
 		answer = await peer_connection.createAnswer()
 		await peer_connection.setLocalDescription(answer)
-		await self._await_ice_completion(peer_connection)
 		assert peer_connection.localDescription is not None
 		return peer_connection.localDescription
 
@@ -157,9 +156,3 @@ class WebRTCStreamManager:
 			track.stop()
 		await peer_connection.close()
 		await asyncio.sleep(0.05)
-
-	@staticmethod
-	async def _await_ice_completion(peer_connection: RTCPeerConnection) -> None:
-		"""Wait until aiortc has finished gathering local ICE candidates."""
-		while peer_connection.iceGatheringState != "complete":
-			await asyncio.sleep(0.05)

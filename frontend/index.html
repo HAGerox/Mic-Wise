@@ -8,23 +8,6 @@
   </head>
   <body>
     <main class="app-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Mic-Wise</p>
-          <h1>Show monitor & channel programming</h1>
-          <p class="subtitle">
-            Monitor the live grid, patch show channels, open a channel detail popup,
-            and scrub the last five minutes for fast fault-finding.
-          </p>
-        </div>
-        <div class="status-card">
-          <div><span>Status</span><strong id="status-text">Connecting…</strong></div>
-          <div><span>Listen Mode</span><strong id="listen-mode-text">Single</strong></div>
-          <div><span>View</span><strong id="mode-text">Monitor</strong></div>
-          <div><span>Listening</span><strong id="selection-count-text">0 channels</strong></div>
-        </div>
-      </header>
-
       <section class="controls toolbar">
         <div class="control-group segmented-control" role="tablist" aria-label="Main views">
           <button id="view-monitor" class="segment-button is-active" type="button">Monitor</button>
@@ -35,18 +18,59 @@
           <button id="layout-mode-toggle" class="secondary" type="button">Arrange layout</button>
           <button id="stop-listening" class="secondary" type="button">Stop audio</button>
         </div>
+        <div class="control-group toolbar-status" aria-label="Current system status">
+          <span class="toolbar-pill">Status <strong id="status-text">Connecting…</strong></span>
+          <span class="toolbar-pill">Listen <strong id="listen-mode-text">Single</strong></span>
+          <span class="toolbar-pill">Listening <strong id="selection-count-text">0 channels</strong></span>
+        </div>
       </section>
 
-      <section id="monitor-view" class="view-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Monitor view</h2>
-            <p id="monitor-help-text">
-              Click a channel tile to listen and open its detailed history popup.
-            </p>
-          </div>
+      <section id="monitor-view" class="view-panel monitor-panel">
+        <div class="monitor-hint-bar">
+          <p id="monitor-help-text">
+            Click a channel tile to listen and open its detailed history popup.
+          </p>
         </div>
-        <div id="channel-grid" class="channel-grid"></div>
+
+        <div class="channel-grid-shell">
+          <div id="channel-grid" class="channel-grid"></div>
+        </div>
+
+        <section class="monitor-dock" aria-label="Channel inspector dock">
+          <div id="channel-modal-empty" class="monitor-dock-empty">
+            <strong>Channel inspector</strong>
+            <span>Select a channel to hear it live or scrub back through the last five minutes.</span>
+          </div>
+
+          <section id="channel-modal" class="monitor-dock-panel is-hidden" role="dialog" aria-modal="false" aria-labelledby="modal-channel-name">
+            <button id="close-modal" class="icon-button" type="button" aria-label="Close channel details">×</button>
+            <header class="modal-header">
+              <div>
+                <p id="modal-channel-number" class="modal-kicker">Channel</p>
+                <h2 id="modal-channel-name">Channel</h2>
+                <p id="modal-channel-meta" class="modal-meta"></p>
+                <p id="modal-transport-status" class="modal-transport-status">Not currently listening</p>
+              </div>
+              <div class="modal-badges">
+                <span id="modal-patch-badge" class="info-badge">Input</span>
+                <span id="modal-record-badge" class="info-badge">Recording</span>
+              </div>
+            </header>
+
+            <div class="waveform-shell">
+              <canvas id="waveform-canvas"></canvas>
+              <div class="waveform-footer">
+                <span>Last 5 minutes</span>
+                <strong id="modal-scrub-label">Click anywhere on the graph to scrub</strong>
+              </div>
+            </div>
+
+            <div class="modal-actions">
+              <button id="modal-listen-live" type="button">Listen live</button>
+              <button id="modal-stop-listening" class="secondary" type="button">Stop</button>
+            </div>
+          </section>
+        </section>
       </section>
 
       <section id="program-view" class="view-panel is-hidden">
@@ -58,6 +82,9 @@
               row.
             </p>
           </div>
+          <div class="panel-heading-actions">
+            <button id="add-channel" type="button">Add channel</button>
+          </div>
         </div>
 
         <div class="table-shell">
@@ -68,7 +95,7 @@
                 <th>Name</th>
                 <th>Input</th>
                 <th>Record</th>
-                <th>Save</th>
+                <th>Remove</th>
               </tr>
             </thead>
             <tbody id="program-table-body"></tbody>
@@ -76,38 +103,7 @@
         </div>
       </section>
 
-      <audio id="monitor-audio" autoplay controls></audio>
-
-      <div id="channel-modal" class="modal is-hidden" aria-hidden="true">
-        <div class="modal-backdrop" data-close-modal="true"></div>
-        <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-channel-name">
-          <button id="close-modal" class="icon-button" type="button" aria-label="Close channel details">×</button>
-          <header class="modal-header">
-            <div>
-              <p id="modal-channel-number" class="modal-kicker">Channel</p>
-              <h2 id="modal-channel-name">Channel</h2>
-              <p id="modal-channel-meta" class="modal-meta"></p>
-            </div>
-            <div class="modal-badges">
-              <span id="modal-patch-badge" class="info-badge">Input</span>
-              <span id="modal-record-badge" class="info-badge">Recording</span>
-            </div>
-          </header>
-
-          <div class="waveform-shell">
-            <canvas id="waveform-canvas"></canvas>
-            <div class="waveform-footer">
-              <span>Last 5 minutes</span>
-              <strong id="modal-scrub-label">Click anywhere on the graph to scrub</strong>
-            </div>
-          </div>
-
-          <div class="modal-actions">
-            <button id="modal-listen-live" type="button">Listen live</button>
-            <button id="modal-stop-listening" class="secondary" type="button">Stop</button>
-          </div>
-        </section>
-      </div>
+      <audio id="monitor-audio" class="sr-audio" autoplay playsinline></audio>
     </main>
 
     <script type="module" src="/app.js"></script>

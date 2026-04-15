@@ -58,11 +58,25 @@ class AudioEngineProcess(mp.Process):
 		)
 		phase = np.zeros(self.config.channels, dtype=np.float64)
 		phase_step = (2.0 * np.pi * channel_frequencies) / self.config.sample_rate
+		amplitude_lfo_rates = 0.05 + (np.arange(self.config.channels, dtype=np.float64) * 0.015)
+		amplitude_lfo_phase = np.zeros(self.config.channels, dtype=np.float64)
+		amplitude_lfo_step = (2.0 * np.pi * amplitude_lfo_rates) / self.config.sample_rate
+		accent_lfo_rates = 0.22 + (np.arange(self.config.channels, dtype=np.float64) * 0.01)
+		accent_lfo_phase = np.zeros(self.config.channels, dtype=np.float64)
+		accent_lfo_step = (2.0 * np.pi * accent_lfo_rates) / self.config.sample_rate
 		frame_index = np.arange(self.config.block_size, dtype=np.float64)[:, None]
 		sleep_duration = self.config.block_size / self.config.sample_rate
 
 		while not self.stop_event.is_set():
-			waveform = np.sin(phase[None, :] + frame_index * phase_step[None, :])
+			tone = np.sin(phase[None, :] + frame_index * phase_step[None, :])
+			amplitude_envelope = 0.2 + 0.8 * (
+				(np.sin(amplitude_lfo_phase[None, :] + frame_index * amplitude_lfo_step[None, :]) + 1.0)
+				/ 2.0
+			)
+			accent_envelope = 0.85 + 0.15 * np.sin(
+				accent_lfo_phase[None, :] + frame_index * accent_lfo_step[None, :],
+			)
+			waveform = tone * amplitude_envelope * accent_envelope
 			chunk = np.clip(
 				np.round(waveform * self.config.synthetic_amplitude),
 				-32_768,
@@ -70,6 +84,12 @@ class AudioEngineProcess(mp.Process):
 			).astype(np.int16)
 			buffer.write(chunk)
 			phase = (phase + self.config.block_size * phase_step) % (2.0 * np.pi)
+			amplitude_lfo_phase = (
+				amplitude_lfo_phase + self.config.block_size * amplitude_lfo_step
+			) % (2.0 * np.pi)
+			accent_lfo_phase = (
+				accent_lfo_phase + self.config.block_size * accent_lfo_step
+			) % (2.0 * np.pi)
 			self.stop_event.wait(sleep_duration)
 
 	def _run_sounddevice(self, buffer: AudioBuffer) -> None:
