@@ -147,6 +147,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Generated Mic-Wise local show/runtime data
+backend/data/*.buffer
+backend/data/*.micwise
+
 # Spyder project settings
 .spyderproject
 .spyproject
