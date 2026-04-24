@@ -1,114 +1,198 @@
 # Mic-Wise: Project Outline & Architecture
 
 ## 1. Project Overview
-**Mic-Wise** is a professional audio monitoring application designed for live sound and theatre environments. It allows operators to monitor a large number of radio microphones (16-64 channels) remotely via a web interface.
 
-### Core Philosophy
-- **Headless Backend:** The audio engine runs on a dedicated machine connected to the audio hardware (Dante, MADI, etc.).
-- **Networked Frontend:** The user interface is a web application accessible from any device (laptop, tablet) on the local network.
-- **Resilience:** The audio recording and monitoring must be rock-solid, decoupled from the UI performance.
+**Mic-Wise** is a browser-based monitoring tool for live sound and theatre radio microphone workflows. The current repository ships a FastAPI backend plus a React + Vite + TypeScript frontend, with live metering, browser listening, scene-aware workflows, and show/setup tooling.
 
-## 2. Functional Requirements
+### Current design goals
 
-### Audio Ingestion
-- **Input:** Support for 16 to 64 channels of live audio.
-- **Drivers:** Cross-platform support via PortAudio (`sounddevice`):
-  - macOS: CoreAudio
-  - Windows: ASIO (via `SD_ENABLE_ASIO`), WDM
-  - Linux: ALSA, Jack
-- **Format:** 16-bit PCM (to optimize memory usage).
+- **Isolate audio capture from the web stack** so UI activity does not disturb audio ingestion.
+- **Use one shared audio boundary** via the memory-mapped ring buffer in `backend/app/audio/buffer.py`.
+- **Keep production deployment simple** by serving a built frontend from the backend.
+- **Preserve operator workflows** for monitoring, show operation, and setup/programming.
 
-### Recording & Buffering
-- **Rolling Buffer:** Continuous 5-minute loop recording for every channel.
-- **Storage:** High-performance memory-mapped ring buffer (RAM/Disk hybrid).
-- **Configuration:** "Show Files" (SQLite databases) store channel counts and sample rates.
+## 2. What changed recently
 
-### Monitoring & Playback
-- **Live Listen:** Low-latency streaming of selected channels to the web client.
-- **Instant Replay:** Ability to "scrub" back up to 5 minutes in time to verify audio artifacts.
-- **Solo/Multi-Listen:** Toggle between listening to a single channel or a mix of selected channels.
+The frontend architecture has changed substantially from the original prototype.
 
-### Analysis & Visualization
-- **Metering:** Real-time RMS energy metering for all channels on the frontend.
-- **Artifact Detection:** Machine Learning (ML) analysis to detect "pops", clicks, or dropouts.
-- **Timeline:** Visual representation of audio energy and detected events on the replay timeline.
+- The old browser UI was a vanilla JavaScript frontend centered around `frontend/app.js` and `frontend/ui_logic.mjs`.
+- The current UI now lives in `frontend/src/` as a Vite-powered React + TypeScript application.
+- FastAPI still serves the production frontend, but it now serves the Vite build output from `frontend/dist`.
 
-### User Interface Modes
-1.  **Monitor Mode:**
-    - Grid view of all channels.
-    - Drag-and-drop arrangement (synced across all clients).
-    - Channel metadata: Name, Photo, Input Patch.
-2.  **Scene-by-Scene Mode:**
-    - Theatre-specific workflow.
-    - Filters view to show only characters in the current or next scene.
-    - Visual distinction for "On Stage" vs "Standby" vs "Off".
+That means any architecture notes that talk about the frontend as a single static JS file are historical, not current.
 
-### System
-- **Discovery:** Zero-configuration networking (mDNS/Zeroconf) so frontends automatically find the backend.
-- **Cross-Platform:** Compatible with macOS, Windows, and Linux.
+## 3. Implemented feature set
 
-## 3. High-Level Architecture
+### Audio ingestion and buffering
 
-The system uses a **Split-Process Architecture** to bypass Python's Global Interpreter Lock (GIL) and ensure audio stability.
+- shared-memory rolling audio buffer implemented with `mmap`
+- separate audio engine process in `backend/app/audio/engine.py`
+- deterministic synthetic audio mode for hardware-free development
+- optional `sounddevice` audio input path
+- five-minute rolling replay window by default
 
-### A. The Data Layer (Shared Memory)
-- **Technology:** `mmap` (Memory Mapped File).
-- **Structure:** Interleaved Ring Buffer.
-- **Role:** Acts as the central "source of truth" for audio data. The Audio Engine writes to it; the Streamer and Analyzer read from it. Zero-copy access ensures high performance.
+### Monitoring and playback
 
-### B. Process 1: Audio Engine (Critical Priority)
-- **Library:** `sounddevice`.
-- **Responsibility:**
-  - Connects to audio hardware.
-  - Reads raw audio frames.
-  - Writes frames to the Shared Ring Buffer.
-  - *Does nothing else to ensure zero dropouts.*
+- live RMS / peak metering delivered to browsers over WebSocket
+- WebRTC browser listening with live and scrub-back playback
+- single-listen and multi-listen workflows
+- waveform preview for recent audio history
 
-### C. Process 2: Analysis Worker
-- **Responsibility:**
-  - Reads the "head" of the Ring Buffer periodically.
-  - Calculates RMS levels for UI meters.
-  - Runs ML inference for artifact detection.
-  - Writes events to the Database and pushes meter data to Redis/Queue (or directly to WebSocket process).
+### Show and setup workflows
 
-### D. Process 3: Web & Streaming Server
-- **Library:** `FastAPI` + `aiortc` (WebRTC).
-- **Responsibility:**
-  - **API:** Serves the browser frontend and handles REST/WebSocket requests.
-  - **Streaming:** Establishes WebRTC connections to stream audio to clients.
-  - **Discovery:** Broadcasts service via `zeroconf`.
-  - **State Management:** Manages the SQLite "Show File" (Channels, Scenes, Settings).
-  - **External Sync:** Optionally listens for OSC/MIDI cue events and maps them onto scenes.
+- **Monitor** view for channel grid monitoring and listening
+- **Show** view for scene-focused workflows and checklist tracking
+- **Setup** view for channel programming, scene editing, cue mapping, and sync settings
 
-### E. Frontend
-- **Technology:** React + Vite + TypeScript frontend under `frontend/`, built into static assets and served by FastAPI.
-- **Responsibility:**
-  - Renders the UI (Meters, Grid, Timeline).
-  - Connects via WebSocket for control/meters.
-  - Connects via WebRTC for audio playback.
-  - Supports three workflows: **Monitor**, **Show**, and **Setup**.
-  - Maintains scene programming, checklist state, and external sync settings in the browser UI.
+### Persistence and integrations
 
-## 4. Implementation Plan
+- SQLite show file for settings, channels, and scenes
+- optional Zeroconf service discovery
+- optional OSC / MIDI scene sync runtime via `backend/app/sync/service.py`
 
-### Phase 1: Core Audio Infrastructure
-1.  **Project Skeleton:** Setup directory structure and dependencies.
-2.  **Buffer Logic:** Implement the `mmap` ring buffer class (`buffer.py`).
-3.  **Audio Engine:** Create the `sounddevice` process to fill the buffer (`engine.py`).
+## 4. Runtime architecture
 
-### Phase 2: Data & State
-1.  **Database Schema:** Define SQLite models for `Settings`, `Channels`, and `Scenes`.
-2.  **Show Management:** Implement logic to load/save `.micwise` database files.
+Mic-Wise currently runs as one backend service with a clear internal runtime split.
 
-### Phase 3: Analysis & API
-1.  **FastAPI Setup:** Create the web server and WebSocket endpoints.
-2.  **Metering:** Implement RMS calculation and pipe it to the frontend via WebSockets.
+### A. Shared audio buffer
 
-### Phase 4: Streaming
-1.  **WebRTC:** Implement `aiortc` tracks that read from the ring buffer.
-2.  **Playback Control:** Add logic for "Live" vs "Replay" reading pointers.
+- **Module:** `backend/app/audio/buffer.py`
+- **Role:** The integration boundary between the audio writer and backend async services.
+- **Format:** interleaved `int16` PCM audio with a monotonic `write_head` and wraparound-safe reads.
 
-### Phase 5: Frontend & Polish
-1.  **Browser UI:** Build and refine the static web interface.
-2.  **Discovery:** Add `zeroconf` broadcasting.
-3.  **Packaging:** (Future) PyInstaller/Electron wrapping.
+### B. Audio engine process
+
+- **Module:** `backend/app/audio/engine.py`
+- **Role:** Runs in its own `multiprocessing.Process`.
+- **Responsibilities:** acquire audio frames from the configured source and write them into the shared buffer with minimal overhead.
+
+### C. FastAPI application process
+
+- **Entry point:** `backend/app/main.py`
+- **Responsibilities:**
+  - create runtime state and shared services
+  - initialise the show database
+  - start the audio engine process
+  - start the meter analysis service
+  - host REST and WebSocket APIs
+  - host the WebRTC stream manager
+  - optionally start Zeroconf discovery and scene sync services
+
+### D. Database layer
+
+- **Modules:** `backend/app/database/models.py`, `repository.py`, `session.py`
+- **Role:** persist show settings, channels, scenes, and scene ordering in SQLite via async SQLAlchemy.
+
+### E. Frontend application
+
+- **Source root:** `frontend/src/`
+- **Build tool:** Vite
+- **UI runtime:** React + TypeScript
+- **Production hosting:** built to `frontend/dist` and served by FastAPI
+
+## 5. Frontend architecture
+
+The frontend is no longer a single-file DOM script. It is split by responsibility:
+
+### Application shell
+
+- `frontend/src/App.tsx` orchestrates the overall application
+- `frontend/src/main.tsx` boots the React app
+- `frontend/index.html` is the Vite entry shell
+
+### Server-facing modules
+
+- `frontend/src/api/` contains typed wrappers for REST endpoints and WebRTC offer flow
+- TanStack Query is used for REST-backed server state such as channels, scenes, settings, sync status, and waveform requests
+
+### Transport hooks
+
+- `frontend/src/hooks/useMeters.ts` manages the `/ws/meters` feed
+- `frontend/src/hooks/useAudioTransport.ts` manages the persistent WebRTC transport and control data channel
+- `frontend/src/hooks/useWaveform.ts` manages waveform polling and interpolation state
+
+### Local UI state
+
+- `frontend/src/state/appStateReducer.ts` owns reducer-based UI state transitions
+- `frontend/src/state/AppStateContext.tsx` provides that state to the component tree
+
+### Pure UI logic and rendering helpers
+
+- `frontend/src/lib/ui-logic.ts` contains pure helper logic ported from the old frontend
+- `frontend/src/lib/format.ts` contains formatting helpers
+- `frontend/styles.css` remains the shared stylesheet for the current UI
+
+### Component structure
+
+Key components currently include:
+
+- `Toolbar.tsx`
+- `ChannelGrid.tsx`
+- `ChannelCard.tsx`
+- `ChannelModal.tsx`
+- `WaveformCanvas.tsx`
+- `ShowSidebar.tsx`
+- `SetupView.tsx`
+
+## 6. End-to-end data flow
+
+### Live metering
+
+1. The audio engine writes audio into `AudioBuffer`.
+2. `MeterAnalysisService` reads recent audio windows from the buffer.
+3. Meter snapshots are pushed to browsers over `/ws/meters`.
+4. The React frontend updates channel cards and show views from that live stream.
+
+### Browser listening
+
+1. The browser requests a WebRTC offer via the backend.
+2. `backend/app/streaming/webrtc.py` creates the stream and control channel.
+3. The frontend keeps the peer connection alive and sends selection/playback updates over the `micwise-control` data channel.
+4. The backend reads the requested channels and playback position from the shared buffer.
+
+### Show editing and scene sync
+
+1. The frontend updates channels, scenes, and settings through REST endpoints.
+2. The repository layer persists those changes to the SQLite show file.
+3. Optional OSC / MIDI cue matching updates sync state inside the backend.
+4. The frontend surfaces the current sync status in the setup workflow.
+
+## 7. Development workflow
+
+### Backend-served production flow
+
+- build the frontend with `cd frontend && npm run build`
+- run the backend with `python backend/run.py`
+- FastAPI serves the built frontend from `frontend/dist`
+
+### Frontend development flow
+
+- run the backend on port `8000`
+- run `npm run dev` inside `frontend/`
+- Vite proxies `/api/*` and `/ws/*` to the backend during development
+
+## 8. Tests and validation
+
+### Backend
+
+- `pytest backend/tests`
+
+### Frontend
+
+- `cd frontend && npm run test`
+- `cd frontend && npm run typecheck`
+- `cd frontend && npm run build`
+
+Frontend tests currently live alongside the source modules, for example:
+
+- `frontend/src/lib/ui-logic.test.ts`
+- `frontend/src/state/appStateReducer.test.ts`
+
+## 9. Future directions
+
+The repository still has room to grow, but these are future ideas rather than implemented features:
+
+- richer browser component tests for high-risk workflows
+- deeper scene/show collaboration features
+- additional operator UX polish and styling refactors
+- more advanced audio analysis beyond the current metering path

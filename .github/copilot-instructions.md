@@ -7,7 +7,7 @@ When generating code for this repository:
 1. **Read the closest real examples first**: start with this file, `docs/architecture/project_outline.md`, and the nearest matching implementation and test files.
 2. **Preserve the current runtime split**: `backend/app/audio/engine.py` is the separate audio process; the FastAPI app in `backend/app/main.py` owns API routes, metering, WebRTC, discovery, and scene sync.
 3. **Treat `AudioBuffer` as the integration boundary**: the shared `mmap` ring buffer in `backend/app/audio/buffer.py` is the source of truth between the audio writer and the async/backend services.
-4. **Keep the frontend backend-served and dependency-light**: the current UI is static HTML/CSS/JS (`frontend/index.html`, `frontend/styles.css`, `frontend/app.js`, `frontend/ui_logic.mjs`) with no checked-in frontend build tooling.
+4. **Keep the frontend backend-served, but work in the React/Vite source**: the current UI source lives under `frontend/src/`, builds with Vite, and is served by FastAPI from `frontend/dist`. Edit source files, not generated build output.
 5. **Prefer consistency over cleanup**: the repo mixes tabs and spaces between files, so preserve the indentation and local style of the file you are editing instead of normalizing unrelated code.
 6. **Prioritize the right quality axis for the layer**:
    - **Audio/buffer/streaming hot paths**: predictable behavior, vectorized math, and low overhead.
@@ -18,7 +18,7 @@ When generating code for this repository:
 ### Language and toolchain facts visible in the repository
 
 - **Python**: no explicit version file is checked in (`pyproject.toml`, `.python-version`, and lockfiles are absent), but the codebase uses modern Python features such as `str | None`, built-in generics, and `@dataclass(slots=True)`. Stay compatible with the existing modern Python style and avoid introducing 3.12+-only syntax unless the repo later adds a formal version pin.
-- **JavaScript**: there is no `package.json` or frontend build configuration. The frontend is plain browser ES modules, and frontend tests use `node:test` and `node:assert/strict` in `frontend/tests/ui_logic.test.mjs`.
+- **Frontend**: the repo now has a checked-in `frontend/package.json` using React 18, Vite 5, TypeScript 5, TanStack Query, SortableJS, and Vitest/React Testing Library. Use the existing npm scripts and do not reintroduce legacy plain-JS frontend assumptions.
 - **Dependencies**: `backend/requirements.txt` currently lists `fastapi`, `uvicorn[standard]`, `sounddevice`, `numpy`, `aiortc`, `zeroconf`, `sqlalchemy`, `greenlet`, `aiosqlite`, `pydantic-settings`, `mido`, `python-osc`, `pytest`, and `httpx`. Versions are not pinned in-repo, so do not assume newer APIs than the code already demonstrates.
 
 ### Context files to prioritize
@@ -26,7 +26,7 @@ When generating code for this repository:
 - `docs/architecture/project_outline.md`
 - `.github/copilot-instructions.md`
 - matching implementation files in `backend/app/` or `frontend/`
-- matching tests in `backend/tests/` or `frontend/tests/`
+- matching tests in `backend/tests/` or `frontend/src/`
 
 There is no dedicated `.github/copilot/` context folder in this repository today, so use the existing implementation files as the source of truth.
 
@@ -37,7 +37,12 @@ There is no dedicated `.github/copilot/` context folder in this repository today
 - `backend/app/audio/engine.py` is responsible for writing audio into the buffer from either a deterministic synthetic source or `sounddevice` input.
 - `backend/app/audio/analysis.py`, `backend/app/streaming/webrtc.py`, `backend/app/api/`, `backend/app/network/discovery.py`, and `backend/app/sync/service.py` run inside the FastAPI process and read from shared state or the audio buffer.
 - `backend/app/database/` uses async SQLAlchemy with `sqlite+aiosqlite` for the show file.
-- `frontend/app.js` owns DOM wiring and state orchestration; `frontend/ui_logic.mjs` contains pure helper logic that is tested separately.
+- `frontend/src/App.tsx` owns high-level UI orchestration across the **Monitor**, **Show**, and **Setup** workflows.
+- `frontend/src/api/` contains typed browser-side access to backend REST and streaming endpoints.
+- `frontend/src/hooks/` owns transport-specific logic such as meters, waveform polling, and WebRTC listening state.
+- `frontend/src/state/` owns reducer/context based local UI state.
+- `frontend/src/lib/ui-logic.ts` contains pure UI helper logic and remains a good place for logic that should stay testable outside the React tree.
+- `frontend/styles.css` is the shared stylesheet; `frontend/index.html` is the Vite entry shell; `frontend/dist` is generated output.
 - Persisted show data belongs under `data_directory`; the shared buffer belongs under `runtime_directory` (see `backend/app/core/settings.py`) and should stay local and disposable.
 
 ## Codebase Scanning Instructions
@@ -68,11 +73,12 @@ When context files are not enough, inspect the closest matching code before gene
    - wraparound-safe reads
    - live-edge protection and replay handling
 
-5. **For frontend behavior**, mirror `frontend/app.js` and `frontend/ui_logic.mjs`:
-   - a single explicit `state` object
-   - small rendering helpers
-   - defensive async fetch handling
-   - pure logic extracted into `ui_logic.mjs`
+5. **For frontend behavior**, mirror the current React frontend under `frontend/src/`:
+   - `App.tsx` for top-level orchestration
+   - `frontend/src/components/` for view and interaction structure
+   - `frontend/src/hooks/` for meters/WebRTC/waveform transport concerns
+   - `frontend/src/state/` for reducer/context-driven UI state
+   - `frontend/src/lib/ui-logic.ts` for pure logic that should remain easy to test
 
 6. **For tests**, mirror the nearest test file instead of inventing a new style.
 
@@ -100,12 +106,14 @@ When context files are not enough, inspect the closest matching code before gene
 
 ### Frontend patterns
 
-- Keep the browser UI framework-free unless the task explicitly asks for a change.
+- Keep the current React + TypeScript structure rather than mixing in ad-hoc DOM scripting.
 - Preserve the three current UX modes: **Monitor**, **Show**, and **Setup**.
-- Treat timer-driven async work defensively. Existing code uses request tokens and current-selection checks before applying results (`listenRequestToken`, `modalWaveformRequestToken`).
-- Prefer extracting pure state/formatting helpers into `frontend/ui_logic.mjs` and covering them with `node --test frontend/tests/*.test.mjs`.
-- Preserve the existing accessibility baseline in `frontend/index.html`: semantic buttons, labels, `aria-label`, `aria-hidden`, and `role="tablist"` patterns are already in use.
-- Do not add a build step, framework, or npm dependency just to solve a small frontend task.
+- Treat timer-driven async work defensively. Preserve request-token or selection checks before applying async results when polling or updating selected entities.
+- Keep TanStack Query for REST-backed server state and reducer/context state for local UI state unless the task clearly requires a different split.
+- Preserve the current transport separation: meter updates, waveform polling, and WebRTC/control-channel logic belong in hooks rather than in random components.
+- Prefer extracting pure state/formatting helpers into `frontend/src/lib/ui-logic.ts` and covering them with Vitest.
+- Preserve the existing accessibility baseline in the JSX markup: semantic buttons, labels, `aria-label`, `aria-hidden`, and tab semantics are already in use.
+- Avoid adding large frontend dependencies or alternate state libraries unless the task genuinely needs them.
 
 ## Code Quality Standards
 
@@ -128,20 +136,21 @@ When context files are not enough, inspect the closest matching code before gene
 
 ### Accessibility and UX robustness
 
-- Preserve semantic HTML and keyboard-friendly controls already present in the static frontend.
+- Preserve semantic HTML/JSX and keyboard-friendly controls already present in the React frontend.
 - Maintain stale-response guards and selection checks in timer-driven UI flows.
 
 ## Testing Expectations
 
 - Backend tests use `pytest` with focused unit tests and small integration tests under `backend/tests/`.
 - Integration tests isolate runtime settings with `monkeypatch` and `tmp_path` (see `backend/tests/test_api.py`).
-- Frontend pure helpers use `node:test` in `frontend/tests/ui_logic.test.mjs`.
-- When adding browser logic that can be pure, prefer moving it into `ui_logic.mjs` and adding a node test.
+- Frontend tests use Vitest under `frontend/src/**/*.test.ts`, with React Testing Library available for component interactions.
+- When adding browser logic that can be pure, prefer moving it into `frontend/src/lib/ui-logic.ts` (or a nearby pure helper module) and adding a Vitest test.
 - Keep hardware-sensitive and network-sensitive tests deterministic; follow the existing pattern of testing audio and WebRTC logic directly without requiring real devices.
 
 ## Repository-Specific Guidance
 
-- Do not assume a frontend package manager, lockfile, release tool, or versioning workflow; none is currently defined in checked-in project metadata.
+- Use the existing npm-based frontend workflow (`frontend/package.json`, `package-lock.json`) rather than introducing an alternative package manager.
+- Treat `frontend/dist`, `node_modules`, and `*.tsbuildinfo` files as generated artifacts; update source files instead.
 - Do not commit generated local data files such as `backend/data/*.micwise` or `backend/data/*.buffer`.
 - The implementation is the source of truth. If a document and the code disagree, follow the code and update the document.
 - When in doubt, make the smallest change that preserves the existing architecture, data flow, and test style.

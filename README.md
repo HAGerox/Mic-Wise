@@ -33,8 +33,8 @@ Create a virtual environment, install the backend dependencies, install the fron
 
 ```text
 python3 -m venv .venv
-.venv/bin/python -m pip install -r backend/requirements.txt
 .venv/bin/python -m pip install -U pip
+.venv/bin/python -m pip install -r backend/requirements.txt
 cd frontend && npm install && npm run build && cd ..
 .venv/bin/python backend/run.py
 ```
@@ -116,13 +116,17 @@ npm run dev
 
 The Vite dev server proxies `/api/*` and `/ws/*` traffic to the backend, so the browser still talks to a single origin during development.
 
+For normal backend-served runs, FastAPI serves the production frontend build from `frontend/dist`, so rebuild with `npm run build` after frontend changes when you are not using the Vite dev server.
+
 ## Tests
 
-Backend and frontend logic are covered by lightweight tests:
+Backend and frontend logic are covered by lightweight tests and validation scripts:
 
 ```text
 pytest backend/tests
-cd frontend && npm test
+cd frontend && npm run test
+cd frontend && npm run typecheck
+cd frontend && npm run build
 ```
 
 ## Current scope
