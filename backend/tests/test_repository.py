@@ -7,10 +7,14 @@ import asyncio
 from app.core.settings import MicWiseSettings
 from app.database.repository import (
     create_channel,
+    create_scene,
     delete_channel,
+    delete_scene,
+    get_settings,
     initialise_show_file,
     list_channels,
     list_scenes,
+    update_scene,
     update_channel,
 )
 from app.database.session import DatabaseManager
@@ -34,10 +38,12 @@ def test_initialise_show_file_seeds_default_records(tmp_path) -> None:
             settings_row = await initialise_show_file(database, settings)
             assert settings_row.channel_count == 4
             assert settings_row.sample_rate == 48_000
+            assert settings_row.master_gain_db == 0.0
 
             channels = await list_channels(database)
             assert len(channels) == 4
             assert channels[0].name == "Channel 1"
+            assert channels[0].gain_db == 0.0
 
             updated = await update_channel(
                 database,
@@ -103,6 +109,77 @@ def test_initialise_show_file_preserves_deleted_channels(tmp_path) -> None:
             channels_after_restart = await list_channels(database)
             assert len(channels_after_restart) == 3
             assert [channel.number for channel in channels_after_restart] == [1, 2, 3]
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_scene_crud_and_channel_delete_resequencing(tmp_path) -> None:
+    settings = MicWiseSettings(
+        data_directory=tmp_path,
+        show_filename="test_show.micwise",
+        buffer_filename="test_audio.buffer",
+        default_sample_rate=48_000,
+        default_channel_count=4,
+        default_buffer_duration_sec=300,
+        default_block_size=480,
+    )
+    settings.ensure_directories()
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            channels = await list_channels(database)
+
+            extra_channel = await create_channel(database)
+            deleted = await delete_channel(database, channel_id=channels[1].id)
+
+            assert deleted is True
+            channels_after_delete = await list_channels(database)
+            assert [channel.number for channel in channels_after_delete] == [1, 2, 3, 4]
+            assert extra_channel.id in {channel.id for channel in channels_after_delete}
+
+            created_scene = await create_scene(
+                database,
+                {
+                    "name": "Quick change",
+                    "sync_osc_address": "/qlab/quick-change",
+                    "sync_midi_pattern": "program_change:12",
+                    "channel_assignments": [
+                        {"channel_id": channels_after_delete[0].id, "state": "onstage"},
+                        {"channel_id": channels_after_delete[1].id, "state": "ready"},
+                    ],
+                },
+            )
+            assert created_scene.name == "Quick change"
+            assert created_scene.sync_osc_address == "/qlab/quick-change"
+
+            updated_scene = await update_scene(
+                database,
+                created_scene.id,
+                {
+                    "order_index": 0,
+                    "sync_osc_argument": "GO",
+                    "channel_assignments": [
+                        {"channel_id": channels_after_delete[0].id, "state": "ready"},
+                    ],
+                },
+            )
+            assert updated_scene is not None
+            assert updated_scene.order_index == 0
+            assert updated_scene.sync_osc_argument == "GO"
+            assert [assignment.state for assignment in updated_scene.channel_assignments] == ["ready"]
+
+            scenes = await list_scenes(database)
+            assert [scene.name for scene in scenes] == ["Quick change", "Scene 1"]
+
+            deleted_scene = await delete_scene(database, created_scene.id)
+            assert deleted_scene is True
+
+            settings_row = await get_settings(database)
+            assert settings_row.active_scene_id == scenes[1].id
         finally:
             await database.dispose()
 

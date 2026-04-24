@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from app.api.schemas import (
@@ -11,7 +13,12 @@ from app.api.schemas import (
 	ChannelWaveformResponse,
 	HealthResponse,
 	MeterSnapshotResponse,
+	SceneCreateRequest,
+	SceneSyncEventRequest,
+	SceneSyncEventResponse,
+	SceneSyncStatusResponse,
 	SceneResponse,
+	SceneUpdateRequest,
 	SettingsResponse,
 	SettingsUpdateRequest,
 	WebRTCAnswerResponse,
@@ -20,12 +27,16 @@ from app.api.schemas import (
 from app.audio.analysis import build_channel_waveform_preview
 from app.database.repository import (
 	create_channel,
+	create_scene,
 	delete_channel,
+	delete_scene,
 	get_channel,
 	get_channels_by_ids,
+	get_scene,
 	get_settings,
 	list_channels,
 	list_scenes,
+	update_scene,
 	update_channel,
 	update_settings,
 )
@@ -66,9 +77,15 @@ async def patch_settings(
 	"""Persist UI-level settings for the active show."""
 	database = request.app.state.database
 	changes = payload.model_dump(exclude_unset=True)
+	if "active_scene_id" in changes and changes["active_scene_id"] is not None:
+		scene = await get_scene(database, int(changes["active_scene_id"]))
+		if scene is None:
+			raise HTTPException(status_code=404, detail="Scene not found")
 	if not changes:
 		return await get_settings(database)
-	return await update_settings(database, changes)
+	updated_settings = await update_settings(database, changes)
+	await request.app.state.scene_sync_service.reload()
+	return updated_settings
 
 
 @router.get("/channels", response_model=list[ChannelResponse])
@@ -143,6 +160,7 @@ async def read_channel_waveform(
 		buffer_path=str(request.app.state.settings.buffer_path),
 		sample_rate=settings.sample_rate,
 		input_index=input_index,
+		gain_db=float(channel.gain_db + settings.master_gain_db),
 		seconds=min(seconds, float(settings.buffer_duration_sec)),
 		points=points,
 	)
@@ -161,6 +179,60 @@ async def read_scenes(request: Request) -> list[SceneResponse]:
 	return await list_scenes(database)
 
 
+@router.post("/scenes", response_model=SceneResponse, status_code=status.HTTP_201_CREATED)
+async def create_scene_record(
+	payload: SceneCreateRequest,
+	request: Request,
+) -> SceneResponse:
+	"""Append a new scene to the show file."""
+	database = request.app.state.database
+	return await create_scene(database, payload.model_dump(exclude_unset=True))
+
+
+@router.patch("/scenes/{scene_id}", response_model=SceneResponse)
+async def patch_scene(
+	scene_id: int,
+	payload: SceneUpdateRequest,
+	request: Request,
+) -> SceneResponse:
+	"""Update scene metadata or per-channel staging states."""
+	database = request.app.state.database
+	scene = await update_scene(
+		database,
+		scene_id=scene_id,
+		changes=payload.model_dump(exclude_unset=True),
+	)
+	if scene is None:
+		raise HTTPException(status_code=404, detail="Scene not found")
+	return scene
+
+
+@router.delete("/scenes/{scene_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_scene_record(scene_id: int, request: Request) -> Response:
+	"""Delete a scene from the show file."""
+	database = request.app.state.database
+	deleted = await delete_scene(database, scene_id)
+	if not deleted:
+		raise HTTPException(status_code=404, detail="Scene not found")
+	return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/sync/status", response_model=SceneSyncStatusResponse)
+async def read_scene_sync_status(request: Request) -> SceneSyncStatusResponse:
+	"""Return runtime status for optional external scene sync listeners."""
+	return SceneSyncStatusResponse(**request.app.state.scene_sync_service.status.to_dict())
+
+
+@router.post("/sync/events", response_model=SceneSyncEventResponse)
+async def apply_scene_sync_event_route(
+	payload: SceneSyncEventRequest,
+	request: Request,
+) -> SceneSyncEventResponse:
+	"""Apply a normalized external cue event to the active show."""
+	result = await request.app.state.scene_sync_service.handle_event(payload.to_event())
+	return SceneSyncEventResponse(**asdict(result))
+
+
 @router.get("/meters/latest", response_model=MeterSnapshotResponse)
 async def read_latest_meters(request: Request) -> MeterSnapshotResponse:
 	"""Return the latest computed meter snapshot."""
@@ -175,17 +247,21 @@ async def create_webrtc_offer(
 	"""Create a WebRTC answer for a browser listener session."""
 	database = request.app.state.database
 	manager = request.app.state.webrtc_manager
+	settings = await get_settings(database)
 	channel_records = await get_channels_by_ids(database, payload.channel_ids)
 	channel_by_id = {channel.id: channel for channel in channel_records}
-	input_indices = [
-		channel_by_id[channel_id].input_index
+	input_sources = [
+		(
+			int(channel_by_id[channel_id].input_index),
+			float(channel_by_id[channel_id].gain_db + settings.master_gain_db),
+		)
 		for channel_id in payload.channel_ids
 		if channel_id in channel_by_id and channel_by_id[channel_id].input_index is not None
 	]
 	answer = await manager.create_answer(
 		sdp=payload.sdp,
 		type_=payload.type,
-		input_indices=input_indices,
+		input_sources=input_sources,
 		replay_seconds=payload.replay_seconds,
 	)
 	return WebRTCAnswerResponse(sdp=answer.sdp, type=answer.type)

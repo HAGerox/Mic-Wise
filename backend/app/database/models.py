@@ -26,8 +26,16 @@ class SettingsRecord(Base):
     buffer_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False)
     block_size: Mapped[int] = mapped_column(Integer, nullable=False)
     audio_source_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="synthetic")
+    master_gain_db: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     multi_listen_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     active_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="monitor")
+    scene_mode_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    active_scene_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    external_sync_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    external_sync_transport: Mapped[str] = mapped_column(String(16), nullable=False, default="off")
+    external_sync_osc_host: Mapped[str] = mapped_column(String(128), nullable=False, default="0.0.0.0")
+    external_sync_osc_port: Mapped[int] = mapped_column(Integer, nullable=False, default=53001)
+    external_sync_midi_input_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -47,6 +55,7 @@ class Channel(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     photo_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     input_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gain_db: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_record_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sort_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     position_x: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -67,6 +76,9 @@ class Scene(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sync_osc_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sync_osc_argument: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sync_midi_pattern: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     channel_assignments: Mapped[list[SceneChannel]] = relationship(
         back_populates="scene",

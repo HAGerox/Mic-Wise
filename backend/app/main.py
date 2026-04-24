@@ -14,11 +14,13 @@ from app.api.websocket import WebSocketManager, router as websocket_router
 from app.audio.analysis import MeterAnalysisService
 from app.audio.buffer import AudioBuffer
 from app.audio.engine import AudioEngineConfig, AudioEngineProcess
+from app.audio.playback import playback_sync_delay_frames
 from app.core.settings import MicWiseSettings
 from app.database.repository import initialise_show_file
 from app.database.session import DatabaseManager
 from app.network.discovery import ZeroconfService
 from app.streaming.webrtc import WebRTCStreamManager
+from app.sync.service import SceneSyncService
 
 
 @asynccontextmanager
@@ -65,6 +67,7 @@ async def lifespan(app: FastAPI):
 		channels=show_settings.channel_count,
 		window_ms=settings.meter_window_ms,
 		poll_interval_ms=settings.meter_poll_interval_ms,
+		playback_delay_frames=playback_sync_delay_frames(show_settings.sample_rate),
 		broadcaster=websocket_manager,
 	)
 	await meter_analysis.start()
@@ -85,10 +88,14 @@ async def lifespan(app: FastAPI):
 	app.state.webrtc_manager = webrtc_manager
 	app.state.meter_analysis = meter_analysis
 	app.state.discovery_service = discovery_service
+	scene_sync_service = SceneSyncService(database)
+	await scene_sync_service.start()
+	app.state.scene_sync_service = scene_sync_service
 
 	try:
 		yield
 	finally:
+		await scene_sync_service.stop()
 		await webrtc_manager.close_all()
 		await meter_analysis.stop()
 		if discovery_service is not None:

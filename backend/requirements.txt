@@ -8,5 +8,7 @@ sqlalchemy
 greenlet
 aiosqlite
 pydantic-settings
+mido
+python-osc
 pytest
 httpx

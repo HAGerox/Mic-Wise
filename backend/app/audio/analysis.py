@@ -10,6 +10,11 @@ import numpy as np
 from app.audio.buffer import AudioBuffer
 
 
+def db_to_linear_gain(gain_db: float) -> float:
+	"""Convert a gain value in decibels to a linear multiplier."""
+	return float(10 ** (gain_db / 20.0))
+
+
 @dataclass(slots=True)
 class MeterSnapshot:
 	"""A point-in-time view of per-channel meter values."""
@@ -38,6 +43,7 @@ class MeterAnalysisService:
 		channels: int,
 		window_ms: int,
 		poll_interval_ms: int,
+		playback_delay_frames: int = 0,
 		broadcaster: object | None = None,
 	) -> None:
 		self.buffer_path = buffer_path
@@ -45,6 +51,7 @@ class MeterAnalysisService:
 		self.channels = channels
 		self.window_frames = max(1, round(sample_rate * (window_ms / 1000.0)))
 		self.poll_interval_seconds = poll_interval_ms / 1000.0
+		self.playback_delay_frames = max(0, playback_delay_frames)
 		self.broadcaster = broadcaster
 		self._task: asyncio.Task[None] | None = None
 		self.latest_snapshot = MeterSnapshot(
@@ -84,12 +91,14 @@ class MeterAnalysisService:
 				await asyncio.sleep(self.poll_interval_seconds)
 
 	def _calculate_snapshot(self, buffer: AudioBuffer) -> MeterSnapshot:
-		"""Calculate per-channel RMS and peak values for the current window."""
-		chunk = buffer.read_latest(self.window_frames)
-		write_head = buffer.refresh_write_head()
+		"""Calculate per-channel RMS and peak values for the playback-synchronised window."""
+		latest_write_head = buffer.refresh_write_head()
+		window_end = max(0, latest_write_head - self.playback_delay_frames)
+		window_start = max(0, window_end - self.window_frames)
+		chunk = buffer.read(window_start, self.window_frames)
 		if chunk.size == 0:
 			return MeterSnapshot(
-				write_head=write_head,
+				write_head=window_end,
 				window_frames=self.window_frames,
 				channels=[
 					{"channel": channel + 1, "rms": 0.0, "peak": 0.0}
@@ -101,7 +110,7 @@ class MeterAnalysisService:
 		rms_values = np.sqrt(np.mean(np.square(normalized), axis=0))
 		peak_values = np.max(np.abs(normalized), axis=0)
 		return MeterSnapshot(
-			write_head=write_head,
+			write_head=window_end,
 			window_frames=int(chunk.shape[0]),
 			channels=[
 				{
@@ -119,6 +128,7 @@ def build_channel_waveform_preview(
 	buffer_path: str,
 	sample_rate: int,
 	input_index: int,
+	gain_db: float,
 	seconds: float,
 	points: int,
 ) -> tuple[float, list[float]]:
@@ -131,6 +141,7 @@ def build_channel_waveform_preview(
 		return 0.0, [0.0 for _ in range(points)]
 
 	normalized = samples.astype(np.float32) / 32_768.0
+	normalized = np.clip(normalized * db_to_linear_gain(gain_db), -1.0, 1.0)
 	boundaries = np.linspace(0, normalized.shape[0], num=points + 1, dtype=int)
 	values: list[float] = []
 	for index in range(points):

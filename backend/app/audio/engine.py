@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -49,6 +50,14 @@ class AudioEngineProcess(mp.Process):
 				f"Unsupported audio source mode: {self.config.source_mode}",
 			)
 
+	def _wait_for_next_block(self, next_deadline: float, block_duration: float) -> float | None:
+		"""Wait until the next synthetic block deadline without accumulating drift."""
+		next_deadline += block_duration
+		remaining = next_deadline - time.perf_counter()
+		if remaining > 0 and self.stop_event.wait(remaining):
+			return None
+		return next_deadline
+
 	def _run_synthetic(self, buffer: AudioBuffer) -> None:
 		"""Generate deterministic tone data for MVP development and testing."""
 		channel_frequencies = (
@@ -65,7 +74,8 @@ class AudioEngineProcess(mp.Process):
 		accent_lfo_phase = np.zeros(self.config.channels, dtype=np.float64)
 		accent_lfo_step = (2.0 * np.pi * accent_lfo_rates) / self.config.sample_rate
 		frame_index = np.arange(self.config.block_size, dtype=np.float64)[:, None]
-		sleep_duration = self.config.block_size / self.config.sample_rate
+		block_duration = self.config.block_size / self.config.sample_rate
+		next_deadline = time.perf_counter()
 
 		while not self.stop_event.is_set():
 			tone = np.sin(phase[None, :] + frame_index * phase_step[None, :])
@@ -90,7 +100,9 @@ class AudioEngineProcess(mp.Process):
 			accent_lfo_phase = (
 				accent_lfo_phase + self.config.block_size * accent_lfo_step
 			) % (2.0 * np.pi)
-			self.stop_event.wait(sleep_duration)
+			next_deadline = self._wait_for_next_block(next_deadline, block_duration)
+			if next_deadline is None:
+				break
 
 	def _run_sounddevice(self, buffer: AudioBuffer) -> None:
 		"""Capture audio from a PortAudio device and write it to the buffer."""

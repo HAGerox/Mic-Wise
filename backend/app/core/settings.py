@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import gettempdir
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def default_runtime_directory() -> Path:
+    """Return a local runtime directory safe for memory-mapped buffers."""
+    return Path(gettempdir()) / "mic-wise-runtime"
 
 
 class MicWiseSettings(BaseSettings):
@@ -22,6 +28,7 @@ class MicWiseSettings(BaseSettings):
     data_directory: Path = Field(
         default_factory=lambda: Path(__file__).resolve().parents[2] / "data",
     )
+    runtime_directory: Path = Field(default_factory=default_runtime_directory)
     show_filename: str = "default.micwise"
     buffer_filename: str = "audio.buffer"
     default_sample_rate: int = 48_000
@@ -39,10 +46,16 @@ class MicWiseSettings(BaseSettings):
         return self.data_directory / self.show_filename
 
     @property
+    def runtime_buffer_directory(self) -> Path:
+        """Return the local runtime folder used for the shared audio buffer."""
+        return self.runtime_directory / f"port-{self.port}"
+
+    @property
     def buffer_path(self) -> Path:
         """Return the mmap audio buffer file path."""
-        return self.data_directory / self.buffer_filename
+        return self.runtime_buffer_directory / self.buffer_filename
 
     def ensure_directories(self) -> None:
-        """Ensure the backend data directory exists."""
+        """Ensure the persistent and runtime backend directories exist."""
         self.data_directory.mkdir(parents=True, exist_ok=True)
+        self.runtime_buffer_directory.mkdir(parents=True, exist_ok=True)
