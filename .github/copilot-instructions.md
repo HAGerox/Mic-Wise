@@ -9,7 +9,7 @@ When generating code for this repository:
 3. **Architectural Consistency**: Maintain the strict separation between the **Audio Engine** (Multiprocessing, shared memory) and the **Web Server** (Asyncio).
 4. **Code Quality**: 
    - **Audio Engine**: Prioritize **Performance** and **Zero-Latency** (avoid allocations in hot loops).
-   - **Web/API**: Prioritize **Maintainability** and **Async I/O**.
+   - **Web/API/UI**: Prioritize **Maintainability**, **Async I/O**, and predictable state updates across polling/WebSocket/WebRTC flows.
 
 ## Technology Stack & Versions
 
@@ -19,12 +19,13 @@ When generating code for this repository:
 
 2. **Frameworks**:
    - Backend: **FastAPI**
-   - Frontend: **React** (via Vite)
+   - Frontend: **Vanilla HTML/CSS/JavaScript modules** served directly by the backend
    - Audio: **PortAudio** (via `sounddevice`)
 
 3. **Key Libraries**:
    - `numpy`: For audio buffer manipulation.
    - `aiortc`: For WebRTC streaming.
+   - `mido` + `python-osc`: For optional external scene-sync integrations.
    - `zeroconf`: For service discovery.
    - `sqlalchemy` + `aiosqlite`: For database interactions.
 
@@ -34,8 +35,9 @@ When generating code for this repository:
 - `backend/`: Python backend code.
   - `app/audio/`: Real-time audio processing (Multiprocessing).
   - `app/api/`: FastAPI web server (Asyncio).
+   - `app/sync/`: Optional external scene-sync runtime services.
   - `app/database/`: Database models and logic.
-- `frontend/`: React application.
+- `frontend/`: Static browser client (`index.html`, `styles.css`, `app.js`, pure helpers in `ui_logic.mjs`).
 
 ### Python Guidelines
 - **Type Hinting**: Use strict type hints (`typing` module) for all function signatures.
@@ -43,7 +45,14 @@ When generating code for this repository:
   - Use `async`/`await` for all I/O bound operations (API, DB).
   - Use `multiprocessing` for CPU-bound or real-time audio tasks.
   - **NEVER** block the asyncio event loop with heavy computation.
-- **Error Handling**: Use custom exception classes in `app/core/exceptions.py` (to be created).
+- **Runtime Files**: Keep the shared mmap audio buffer under the configured runtime directory, not the persistent show-data directory.
+
+### Frontend Guidelines
+- Keep the browser UI dependency-light and framework-free unless the user explicitly requests a stack change.
+- Prefer extracting pure state/formatting helpers into `frontend/ui_logic.mjs` and cover them with `node --test` in `frontend/tests/`.
+- The current UX is organized around three views: **Monitor**, **Show**, and **Setup**.
+- Treat timer-driven async fetches defensively: ignore stale responses when the selected channel or scene changes.
+- Preserve the persistent WebRTC transport plus control-data-channel model instead of rebuilding the transport for every selection change.
 
 ### React Guidelines (Future)
 - Use **Functional Components** with Hooks.
@@ -60,6 +69,7 @@ When generating code for this repository:
 ### Maintainability
 - **Docstrings**: Use Google-style docstrings for all modules, classes, and functions.
 - **Configuration**: Use `pydantic` for settings management.
+- **UI State**: Keep browser-side state transitions explicit and small; prefer helper functions for scene selection, sync status text, and waveform interpolation logic.
 
 ## Documentation Requirements
 
@@ -72,6 +82,7 @@ When generating code for this repository:
 - Use `pytest`.
 - Mock hardware interfaces (`sounddevice`) for logic tests.
 - Test asyncio coroutines using `pytest-asyncio`.
+- Use `node --test frontend/tests/*.test.mjs` for pure frontend helper coverage.
 
 ## Version Control Guidelines
 

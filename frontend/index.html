@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mic-Wise Show Monitor</title>
+    <link rel="stylesheet" href="/styles.css?v=20260423-3" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="controls toolbar">
+        <div class="toolbar-main">
+          <div class="control-group segmented-control" role="tablist" aria-label="Main views">
+            <button id="view-monitor" class="segment-button is-active" type="button">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path><path d="M12 16v4"></path></svg>
+              </span>
+              <span class="button-label">Monitor</span>
+            </button>
+            <button id="view-show" class="segment-button" type="button">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path><path d="m17 14 4 4-4 4"></path></svg>
+              </span>
+              <span class="button-label">Show</span>
+            </button>
+          </div>
+
+          <div id="toolbar-actions" class="control-group button-row">
+            <button id="listen-mode-toggle" type="button">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M12 4a8 8 0 0 0-8 8v3a3 3 0 0 0 3 3h1v-7H7a5 5 0 0 1 10 0h-1v7h1a3 3 0 0 0 3-3v-3a8 8 0 0 0-8-8Z"></path></svg>
+              </span>
+              <span class="button-label">Single listen</span>
+            </button>
+
+            <div id="show-scene-stepper" class="scene-stepper is-hidden" aria-label="Scene navigation">
+              <button id="scene-prev" class="secondary icon-button" type="button" aria-label="Previous scene">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="m15 18-6-6 6-6"></path></svg>
+              </button>
+              <span class="toolbar-pill toolbar-pill--scene">Scene <strong id="scene-status-text">No scenes</strong></span>
+              <button id="scene-next" class="secondary icon-button" type="button" aria-label="Next scene">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="m9 18 6-6-6-6"></path></svg>
+              </button>
+            </div>
+
+            <button id="layout-mode-toggle" class="secondary" type="button">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="m4 20 4-1 10-10-3-3L5 16l-1 4Z"></path><path d="m14 6 3 3"></path></svg>
+              </span>
+              <span class="button-label">Arrange</span>
+            </button>
+
+            <button id="stop-listening" class="secondary" type="button">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M6 6h12v12H6z"></path></svg>
+              </span>
+              <span class="button-label">Clear</span>
+            </button>
+          </div>
+
+          <button id="view-setup" class="secondary toolbar-utility" type="button">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.93 4.93 2.12 2.12"></path><path d="m16.95 16.95 2.12 2.12"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m4.93 19.07 2.12-2.12"></path><path d="m16.95 7.05 2.12-2.12"></path><circle cx="12" cy="12" r="3.5"></circle></svg>
+            </span>
+            <span class="button-label">Setup</span>
+          </button>
+        </div>
+
+        <div class="toolbar-status-strip" aria-label="Current system status">
+          <span class="toolbar-pill">Audio <strong id="status-text">Connecting…</strong></span>
+          <span class="toolbar-pill">Selected <strong id="selection-count-text">0 channels</strong></span>
+          <span id="show-progress-pill" class="toolbar-pill is-hidden">Mic check <strong id="show-progress-text">0/0 checked</strong></span>
+        </div>
+      </section>
+
+      <section id="monitor-view" class="view-panel monitor-panel">
+        <div class="monitor-workspace">
+          <div class="channel-grid-shell">
+            <div id="channel-grid" class="channel-grid"></div>
+          </div>
+
+          <aside id="show-sidebar" class="show-sidebar is-hidden" aria-label="Show mode mic check">
+            <div class="show-sidebar-header">
+              <div>
+                <h2>Mic check</h2>
+                <p id="show-scene-summary" class="show-scene-summary">Select a scene to start checking channels.</p>
+              </div>
+              <p id="show-next-scene" class="show-next-scene">Next: —</p>
+            </div>
+
+            <div class="show-legend" aria-label="Show mode colour legend">
+              <span class="show-legend-item is-checked">Green · checked</span>
+              <span class="show-legend-item is-pending">Red · pending</span>
+              <span class="show-legend-item is-off">Grey · not in scene</span>
+            </div>
+
+            <p class="show-shortcuts">Press <strong>Y</strong> to check, <strong>N</strong> to undo, or hold a channel card to toggle it.</p>
+
+            <div id="show-list" class="show-list"></div>
+          </aside>
+        </div>
+
+        <section class="monitor-dock" aria-label="Channel inspector dock">
+          <div id="channel-modal-empty" class="monitor-dock-empty">
+            <strong>Channel inspector</strong>
+            <span>Select a channel to hear it live or scrub back through the last five minutes.</span>
+          </div>
+
+          <section id="channel-modal" class="monitor-dock-panel is-hidden" role="dialog" aria-modal="false" aria-labelledby="modal-channel-name">
+            <button id="close-modal" class="icon-button" type="button" aria-label="Close channel details">×</button>
+            <header class="modal-header">
+              <div>
+                <p id="modal-channel-number" class="modal-kicker">Channel</p>
+                <h2 id="modal-channel-name">Channel</h2>
+                <p id="modal-channel-meta" class="modal-meta"></p>
+                <p id="modal-transport-status" class="modal-transport-status">Not currently listening</p>
+              </div>
+              <div class="modal-badges">
+                <span id="modal-patch-badge" class="info-badge">Input</span>
+                <span id="modal-record-badge" class="info-badge">Recording</span>
+              </div>
+            </header>
+
+            <div class="waveform-shell">
+              <canvas id="waveform-canvas"></canvas>
+              <div class="waveform-scale" aria-hidden="true">
+                <span>5:00</span>
+                <span>4:00</span>
+                <span>3:00</span>
+                <span>2:00</span>
+                <span>1:00</span>
+                <span>Live</span>
+              </div>
+              <div class="waveform-footer">
+                <div class="waveform-footer-text">
+                  <span>Last 5 minutes</span>
+                  <strong id="modal-scrub-label">Click anywhere on the graph to scrub</strong>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <section id="setup-view" class="view-panel is-hidden">
+        <div class="panel-heading">
+          <div>
+            <h2>Show setup</h2>
+            <p>Program show file metadata, build scenes, and configure optional external cue sync.</p>
+          </div>
+          <div class="panel-heading-actions">
+            <div class="control-group segmented-control compact-segmented" role="tablist" aria-label="Setup sections">
+              <button id="setup-tab-program" class="segment-button is-active" type="button">Channels</button>
+              <button id="setup-tab-scenes" class="segment-button" type="button">Scenes</button>
+            </div>
+          </div>
+        </div>
+
+        <section id="setup-program-panel" class="setup-panel">
+          <div class="panel-heading panel-heading--nested">
+            <div>
+              <h3>Channel programming</h3>
+              <p>Patch inputs, rename channels, and manage trim and rolling record from one place.</p>
+            </div>
+            <div class="panel-heading-actions">
+              <label class="compact-setting" for="master-gain-input">
+                <span>Master trim</span>
+                <div class="compact-setting-input">
+                  <input id="master-gain-input" type="number" min="-24" max="24" step="1" value="0" />
+                  <span>dB</span>
+                </div>
+              </label>
+              <button id="add-channel" type="button">Add channel</button>
+            </div>
+          </div>
+
+          <div class="table-shell">
+            <table class="program-table">
+              <thead>
+                <tr>
+                  <th>Channel</th>
+                  <th>Name</th>
+                  <th>Input</th>
+                  <th>Trim</th>
+                  <th>Record</th>
+                  <th>Remove</th>
+                </tr>
+              </thead>
+              <tbody id="program-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="setup-scenes-panel" class="setup-panel is-hidden">
+          <div class="panel-heading panel-heading--nested">
+            <div>
+              <h3>Scene programming</h3>
+              <p>Choose who is on stage, who is about to enter, and optionally map scenes to external cues.</p>
+            </div>
+            <div class="panel-heading-actions">
+              <button id="add-scene" type="button">Add scene</button>
+            </div>
+          </div>
+
+          <section class="scene-sync-settings-panel">
+            <div>
+              <h3>External scene sync</h3>
+              <p>Optional QLab / desk integration. It stays off until you enable it and map cues to scenes.</p>
+            </div>
+
+            <div class="scene-sync-settings-grid">
+              <label class="field-group field-group--toggle" for="external-sync-enabled">
+                <span>Enabled</span>
+                <input id="external-sync-enabled" type="checkbox" />
+              </label>
+              <label class="field-group" for="external-sync-transport">
+                <span>Transport</span>
+                <select id="external-sync-transport">
+                  <option value="off">Disabled</option>
+                  <option value="osc">OSC</option>
+                  <option value="midi">MIDI</option>
+                  <option value="both">OSC + MIDI</option>
+                </select>
+              </label>
+              <label class="field-group" for="external-sync-osc-host">
+                <span>OSC host</span>
+                <input id="external-sync-osc-host" type="text" placeholder="0.0.0.0" />
+              </label>
+              <label class="field-group" for="external-sync-osc-port">
+                <span>OSC port</span>
+                <input id="external-sync-osc-port" type="number" min="0" max="65535" step="1" placeholder="53001" />
+              </label>
+              <label class="field-group" for="external-sync-midi-input-name">
+                <span>MIDI input name</span>
+                <input id="external-sync-midi-input-name" type="text" placeholder="IAC Driver Bus 1" />
+              </label>
+            </div>
+
+            <p id="external-sync-status" class="scene-sync-status">Disabled</p>
+          </section>
+
+          <div class="scenes-layout">
+            <aside class="scene-list-panel">
+              <div id="scene-list" class="scene-list"></div>
+            </aside>
+
+            <section class="scene-editor-panel">
+              <div id="scene-empty-state" class="scene-empty-state is-hidden">
+                <strong>No scene selected</strong>
+                <span>Add a scene to start programming who is on stage and who is about to enter.</span>
+              </div>
+
+              <div id="scene-detail" class="scene-detail is-hidden">
+                <div class="scene-detail-header">
+                  <label class="scene-name-field" for="scene-name-input">
+                    <span>Scene name</span>
+                    <input id="scene-name-input" type="text" value="Scene 1" />
+                  </label>
+                  <div class="scene-detail-actions">
+                    <button id="delete-scene" class="button-danger" type="button">Delete scene</button>
+                  </div>
+                </div>
+
+                <p id="scene-detail-summary" class="scene-detail-summary"></p>
+
+                <section class="scene-sync-card">
+                  <div>
+                    <h3>Scene cue mapping</h3>
+                    <p>Optional exact-match cues for external sync.</p>
+                  </div>
+                  <div class="scene-sync-grid">
+                    <label class="field-group" for="scene-sync-osc-address">
+                      <span>OSC address</span>
+                      <input id="scene-sync-osc-address" type="text" placeholder="/qlab/scene/2" />
+                    </label>
+                    <label class="field-group" for="scene-sync-osc-argument">
+                      <span>OSC first argument</span>
+                      <input id="scene-sync-osc-argument" type="text" placeholder="GO" />
+                    </label>
+                    <label class="field-group" for="scene-sync-midi-pattern">
+                      <span>MIDI pattern</span>
+                      <input id="scene-sync-midi-pattern" type="text" placeholder="program_change:12" />
+                    </label>
+                  </div>
+                </section>
+
+                <div class="table-shell">
+                  <table class="program-table scene-table">
+                    <thead>
+                      <tr>
+                        <th>Channel</th>
+                        <th>Name</th>
+                        <th>Scene status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="scene-table-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <audio id="monitor-audio" class="sr-audio" autoplay playsinline></audio>
+    </main>
+
+    <script type="module" src="/app.js?v=20260423-3"></script>
+  </body>
+</html>

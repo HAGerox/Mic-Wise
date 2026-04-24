@@ -74,17 +74,20 @@ The system uses a **Split-Process Architecture** to bypass Python's Global Inter
 ### D. Process 3: Web & Streaming Server
 - **Library:** `FastAPI` + `aiortc` (WebRTC).
 - **Responsibility:**
-  - **API:** Serves the React frontend and handles REST/WebSocket requests.
+  - **API:** Serves the browser frontend and handles REST/WebSocket requests.
   - **Streaming:** Establishes WebRTC connections to stream audio to clients.
   - **Discovery:** Broadcasts service via `zeroconf`.
   - **State Management:** Manages the SQLite "Show File" (Channels, Scenes, Settings).
+  - **External Sync:** Optionally listens for OSC/MIDI cue events and maps them onto scenes.
 
 ### E. Frontend
-- **Technology:** React (Vite).
+- **Technology:** Lightweight static frontend (`index.html`, `styles.css`, `app.js`, `ui_logic.mjs`) served directly by FastAPI.
 - **Responsibility:**
   - Renders the UI (Meters, Grid, Timeline).
   - Connects via WebSocket for control/meters.
   - Connects via WebRTC for audio playback.
+  - Supports three workflows: **Monitor**, **Show**, and **Setup**.
+  - Maintains scene programming, checklist state, and external sync settings in the browser UI.
 
 ## 4. Implementation Plan
 
@@ -106,6 +109,6 @@ The system uses a **Split-Process Architecture** to bypass Python's Global Inter
 2.  **Playback Control:** Add logic for "Live" vs "Replay" reading pointers.
 
 ### Phase 5: Frontend & Polish
-1.  **React App:** Build the visual interface.
+1.  **Browser UI:** Build and refine the static web interface.
 2.  **Discovery:** Add `zeroconf` broadcasting.
 3.  **Packaging:** (Future) PyInstaller/Electron wrapping.
