@@ -43,7 +43,7 @@ def test_api_health_and_static_frontend(tmp_path, monkeypatch) -> None:
 
 		frontend = client.get("/")
 		assert frontend.status_code == 200
-		assert "Program show file" in frontend.text
+		assert "Mic-Wise" in frontend.text
 
 
 def test_settings_and_waveform_routes(tmp_path, monkeypatch) -> None:

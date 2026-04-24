@@ -113,7 +113,10 @@ def create_app() -> FastAPI:
 	app = FastAPI(title="Mic-Wise Backend", lifespan=lifespan)
 	app.include_router(api_router, prefix="/api")
 	app.include_router(websocket_router)
-	frontend_directory = Path(__file__).resolve().parents[2] / "frontend"
+	frontend_root = Path(__file__).resolve().parents[2] / "frontend"
+	frontend_directory = frontend_root / "dist"
+	if not (frontend_directory / "index.html").exists():
+		frontend_directory = frontend_root
 	if frontend_directory.exists():
 		app.mount(
 			"/",

@@ -2,7 +2,7 @@
 
 Mic-Wise is a browser-based monitoring tool for live sound and theatre radio microphone workflows.
 
-The current repository is a single Python backend plus a static browser frontend. It already includes live metering, browser listening, scene-aware show views, and setup tooling for channel programming and optional external cue sync.
+The current repository is a Python backend plus a React + Vite + TypeScript frontend. It already includes live metering, browser listening, scene-aware show views, and setup tooling for channel programming and optional external cue sync.
 
 ## What is implemented today
 
@@ -12,7 +12,7 @@ The current repository is a single Python backend plus a static browser frontend
 - live RMS / peak meter analysis in `backend/app/audio/analysis.py`
 - REST API routes, WebSocket meter updates, and WebRTC listening sessions from the FastAPI app
 - a seeded SQLite show file storing settings, channels, and scenes
-- a static browser UI served directly by the backend with **Monitor**, **Show**, and **Setup** views
+- a React browser UI built with Vite and served by the backend as static assets, with **Monitor**, **Show**, and **Setup** views
 - waveform preview and scrub-back listening for the last five minutes
 - optional Zeroconf discovery
 - optional OSC / MIDI scene sync runtime in `backend/app/sync/service.py`
@@ -25,15 +25,17 @@ Mic-Wise currently runs as one backend service with a clear internal split:
 - `backend/app/audio/buffer.py` exposes the shared `mmap` ring buffer used by the rest of the system.
 - `backend/app/main.py` hosts the FastAPI application and starts the async runtime services.
 - `backend/app/audio/analysis.py`, `backend/app/streaming/webrtc.py`, `backend/app/api/`, `backend/app/network/discovery.py`, and `backend/app/sync/service.py` run inside the FastAPI process.
-- `frontend/index.html`, `frontend/styles.css`, `frontend/app.js`, and `frontend/ui_logic.mjs` are served directly by FastAPI without a frontend build step.
+- the frontend source lives under `frontend/` as a Vite app and the production build is served by FastAPI from `frontend/dist`
 
 ## Quick start
 
-Create a virtual environment, install the backend dependencies, and start the server:
+Create a virtual environment, install the backend dependencies, install the frontend dependencies, build the frontend, and start the server:
 
 ```text
 python3 -m venv .venv
 .venv/bin/python -m pip install -r backend/requirements.txt
+.venv/bin/python -m pip install -U pip
+cd frontend && npm install && npm run build && cd ..
 .venv/bin/python backend/run.py
 ```
 
@@ -102,13 +104,25 @@ Current runtime settings include:
 - `MICWISE_METER_POLL_INTERVAL_MS`
 - `MICWISE_ZEROCONF_ENABLED` (`true` / `false`)
 
+## Frontend development
+
+During frontend development, run the FastAPI backend on port `8000` and start the Vite dev server in a second terminal:
+
+```text
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite dev server proxies `/api/*` and `/ws/*` traffic to the backend, so the browser still talks to a single origin during development.
+
 ## Tests
 
-Backend and frontend helper logic are both covered by lightweight tests:
+Backend and frontend logic are covered by lightweight tests:
 
 ```text
 pytest backend/tests
-node --test frontend/tests/*.test.mjs
+cd frontend && npm test
 ```
 
 ## Current scope
@@ -120,4 +134,4 @@ The current codebase already goes beyond a bare monitoring prototype. It include
 - show-file backed channel and scene programming
 - optional OSC / MIDI scene sync hooks
 
-Future work can still deepen the system from here, but the code in this branch is already centered on a backend-served static UI with monitor, show, and setup workflows.
+Future work can still deepen the system from here, but the code in this branch is already centered on a backend-served React UI with monitor, show, and setup workflows.

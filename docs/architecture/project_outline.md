@@ -81,7 +81,7 @@ The system uses a **Split-Process Architecture** to bypass Python's Global Inter
   - **External Sync:** Optionally listens for OSC/MIDI cue events and maps them onto scenes.
 
 ### E. Frontend
-- **Technology:** Lightweight static frontend (`index.html`, `styles.css`, `app.js`, `ui_logic.mjs`) served directly by FastAPI.
+- **Technology:** React + Vite + TypeScript frontend under `frontend/`, built into static assets and served by FastAPI.
 - **Responsibility:**
   - Renders the UI (Meters, Grid, Timeline).
   - Connects via WebSocket for control/meters.

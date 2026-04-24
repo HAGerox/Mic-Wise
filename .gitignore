@@ -14,6 +14,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+frontend/node_modules/
 downloads/
 eggs/
 .eggs/
@@ -150,6 +151,9 @@ venv.bak/
 # Generated Mic-Wise local show/runtime data
 backend/data/*.buffer
 backend/data/*.micwise
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # Spyder project settings
 .spyderproject
