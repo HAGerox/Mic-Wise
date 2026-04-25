@@ -58,6 +58,15 @@ describe('appStateReducer', () => {
     expect(nextState.modalScrubSeconds).toBe(0);
   });
 
+  it('accepts the new setup sidebar tab ids', () => {
+    const nextState = appStateReducer(initialAppState, {
+      type: 'setSetupTab',
+      payload: 'automation',
+    });
+
+    expect(nextState.setupTab).toBe('automation');
+  });
+
   it('tracks scene checklist state per scene id', () => {
     const firstToggle = appStateReducer(initialAppState, {
       type: 'toggleSceneChecklist',

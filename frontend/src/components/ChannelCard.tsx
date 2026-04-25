@@ -11,7 +11,7 @@ function buildSparklinePoints(history: number[]): string {
   return safeHistory
     .map((value, index) => {
       const x = safeHistory.length === 1 ? 50 : (index / (safeHistory.length - 1)) * 100;
-      const y = 22 - (Math.min(Math.max(value, 0), 1) * 18);
+      const y = 23 - (Math.min(Math.max(value, 0), 1) * 20);
       return `${x},${y}`;
     })
     .join(' ');

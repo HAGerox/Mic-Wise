@@ -132,7 +132,7 @@ def build_channel_waveform_preview(
 	seconds: float,
 	points: int,
 ) -> tuple[float, list[float]]:
-	"""Build a channel RMS waveform preview over the requested time window."""
+	"""Build a channel peak waveform preview over the requested time window."""
 	frame_count = max(1, int(round(sample_rate * seconds)))
 	with AudioBuffer(buffer_path) as buffer:
 		samples = buffer.read_latest_channel(frame_count, input_index)
@@ -151,6 +151,6 @@ def build_channel_waveform_preview(
 			segment = normalized[start : start + 1]
 		else:
 			segment = normalized[start:end]
-		values.append(float(np.sqrt(np.mean(np.square(segment)))))
+		values.append(float(np.max(np.abs(segment))) if segment.size > 0 else 0.0)
 
 	return samples.shape[0] / float(sample_rate), values

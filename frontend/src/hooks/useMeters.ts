@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { appendMeterHistoryPoint } from '../lib/ui-logic';
 import type { MeterChannelSnapshot, MeterSnapshotResponse } from '../types/api';
 
-const METER_HISTORY_POINTS = 28;
+export const METER_HISTORY_POINTS = 280;
 
 function snapshotToMap(
   snapshot: MeterSnapshotResponse | null | undefined,
@@ -42,7 +42,7 @@ export function useMeters(
           channelMeter.channel,
           appendMeterHistoryPoint(
             currentHistoryMap.get(channelMeter.channel) ?? [],
-            channelMeter.rms,
+            channelMeter.peak,
             METER_HISTORY_POINTS,
           ),
         );
@@ -55,7 +55,7 @@ export function useMeters(
     setMeterMap(snapshotToMap(initialSnapshot));
     setMeterHistoryMap(
       new Map(
-        (initialSnapshot?.channels ?? []).map((channelMeter) => [channelMeter.channel, [Math.max(0, channelMeter.rms)]])
+        (initialSnapshot?.channels ?? []).map((channelMeter) => [channelMeter.channel, [Math.max(0, channelMeter.peak)]])
       ),
     );
   }, [initialSnapshot]);

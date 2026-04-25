@@ -16,7 +16,7 @@ from app.audio.buffer import AudioBuffer
 from app.audio.playback import playback_sync_delay_frames
 
 
-SELECTION_CROSSFADE_SECONDS = 0.004
+SELECTION_CROSSFADE_SECONDS = 0.01
 
 
 def db_to_linear_gain(gain_db: float) -> float:
@@ -46,10 +46,22 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		self.input_sources: list[tuple[int, float]] = []
 		self._transition_from_sources: list[tuple[int, float]] = []
 		self._transition_remaining_frames = 0
+		self._playhead_transition_start_sample = 0.0
+		self._playhead_transition_remaining_frames = 0
+		self._last_output_sample = 0.0
 		self._playback_mode = "live"
 		self._read_head = 0
 		self.update_selection(input_sources=input_sources, replay_seconds=replay_seconds, reset_read_head=True)
+		self._transition_from_sources = []
+		self._transition_remaining_frames = 0
+		self._playhead_transition_start_sample = 0.0
+		self._playhead_transition_remaining_frames = 0
 		self._buffer_closed = False
+
+	def _queue_playhead_transition(self) -> None:
+		"""Fade from the last rendered sample when the read head jumps."""
+		self._playhead_transition_start_sample = float(self._last_output_sample)
+		self._playhead_transition_remaining_frames = self.fade_frames
 
 	def _normalise_input_sources(
 		self,
@@ -84,11 +96,13 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		replay_frames = max(0, int(round(float(replay_seconds) * self.sample_rate)))
 
 		if replay_frames > 0:
+			self._queue_playhead_transition()
 			self._playback_mode = "replay"
 			self._read_head = max(earliest, latest - replay_frames)
 			return
 
 		if reset_read_head or self._playback_mode != "live":
+			self._queue_playhead_transition()
 			self._read_head = self._target_live_read_head(latest)
 		self._playback_mode = "live"
 
@@ -165,29 +179,49 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 	def _mix_selected_channels(self, chunk: np.ndarray) -> np.ndarray:
 		"""Mix the selected input channels down to a mono program stream."""
 		target_mono = self._mix_sources(chunk, self.input_sources)
-		if self._transition_remaining_frames <= 0 or not self._transition_from_sources:
-			return target_mono
+		if self._transition_remaining_frames > 0:
+			source_mono = self._mix_sources(chunk, self._transition_from_sources)
+			fade_frames = min(chunk.shape[0], self._transition_remaining_frames)
+			fade_start = self.fade_frames - self._transition_remaining_frames
+			fade_curve = np.clip(
+				(np.arange(fade_frames, dtype=np.float32) + fade_start + 1) / max(self.fade_frames, 1),
+				0.0,
+				1.0,
+			)
 
-		source_mono = self._mix_sources(chunk, self._transition_from_sources)
-		fade_frames = min(self.samples_per_frame, self._transition_remaining_frames)
-		fade_start = self.fade_frames - self._transition_remaining_frames
-		fade_curve = np.clip(
-			(np.arange(fade_frames, dtype=np.float32) + fade_start + 1) / max(self.fade_frames, 1),
-			0.0,
-			1.0,
-		)
+			mixed = target_mono.astype(np.float32)
+			mixed[:fade_frames] = (
+				source_mono[:fade_frames].astype(np.float32) * (1.0 - fade_curve)
+				+ mixed[:fade_frames] * fade_curve
+			)
 
-		mixed = target_mono.astype(np.float32)
-		mixed[:fade_frames] = (
-			source_mono[:fade_frames].astype(np.float32) * (1.0 - fade_curve)
-			+ mixed[:fade_frames] * fade_curve
-		)
+			self._transition_remaining_frames -= fade_frames
+			if self._transition_remaining_frames <= 0:
+				self._transition_from_sources = []
+			target_mono = np.clip(np.round(mixed), -32_768, 32_767).astype(np.int16)
 
-		self._transition_remaining_frames -= fade_frames
-		if self._transition_remaining_frames <= 0:
-			self._transition_from_sources = []
+		if self._playhead_transition_remaining_frames > 0:
+			fade_frames = min(chunk.shape[0], self._playhead_transition_remaining_frames)
+			fade_start = self.fade_frames - self._playhead_transition_remaining_frames
+			fade_curve = np.clip(
+				(np.arange(fade_frames, dtype=np.float32) + fade_start + 1) / max(self.fade_frames, 1),
+				0.0,
+				1.0,
+			)
 
-		return np.clip(np.round(mixed), -32_768, 32_767).astype(np.int16)
+			mixed = target_mono.astype(np.float32)
+			mixed[:fade_frames] = (
+				self._playhead_transition_start_sample * (1.0 - fade_curve)
+				+ mixed[:fade_frames] * fade_curve
+			)
+			target_mono = np.clip(np.round(mixed), -32_768, 32_767).astype(np.int16)
+
+			self._playhead_transition_remaining_frames -= fade_frames
+			if self._playhead_transition_remaining_frames <= 0:
+				self._playhead_transition_start_sample = 0.0
+
+		self._last_output_sample = float(target_mono[-1]) if target_mono.size > 0 else 0.0
+		return target_mono
 
 	def stop(self) -> None:
 		"""Release the shared buffer when the track ends."""

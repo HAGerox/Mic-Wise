@@ -85,12 +85,15 @@ export function WaveformCanvas({
     const baseline = height - 12;
 
     if (values.length > 0 && occupiedWidth > 0) {
+      const chartTop = 8;
+      const chartHeight = baseline - chartTop;
+
       context.beginPath();
       context.moveTo(startX, baseline);
       for (let index = 0; index < values.length; index += 1) {
         const value = values[index];
         const x = startX + ((occupiedWidth * index) / Math.max(values.length - 1, 1));
-        const y = baseline - Math.max(2, value * (height - 26));
+        const y = baseline - Math.max(1, value * chartHeight);
         context.lineTo(x, y);
       }
       context.lineTo(startX + occupiedWidth, baseline);
@@ -102,7 +105,7 @@ export function WaveformCanvas({
       for (let index = 0; index < values.length; index += 1) {
         const value = values[index];
         const x = startX + ((occupiedWidth * index) / Math.max(values.length - 1, 1));
-        const y = baseline - Math.max(2, value * (height - 26));
+        const y = baseline - Math.max(1, value * chartHeight);
         if (index === 0) {
           context.moveTo(x, y);
         } else {

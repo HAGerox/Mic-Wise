@@ -75,8 +75,8 @@ export function ChannelGrid({
 
     if (!sortableRef.current) {
       sortableRef.current = Sortable.create(gridElement, {
-        animation: 180,
-        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        animation: 120,
+        easing: 'cubic-bezier(0.2, 0.9, 0.2, 1)',
         draggable: '.channel-card',
         dataIdAttr: 'data-channel-id',
         ghostClass: 'channel-card--ghost',
@@ -84,7 +84,7 @@ export function ChannelGrid({
         dragClass: 'channel-card--dragging',
         fallbackClass: 'channel-card--fallback',
         forceFallback: true,
-        fallbackOnBody: true,
+        fallbackOnBody: false,
         fallbackTolerance: 4,
         swapThreshold: 0.72,
         invertedSwapThreshold: 0.78,
@@ -93,8 +93,10 @@ export function ChannelGrid({
         onStart: () => {
           onCloseModal();
         },
-        onEnd: async () => {
-          const orderedIds = sortableRef.current?.toArray().map(Number) ?? [];
+        onEnd: async (event) => {
+          const orderedIds = Array.from(event.to.children)
+            .map((child) => Number((child as HTMLElement).dataset.channelId ?? Number.NaN))
+            .filter(Number.isInteger);
           await onPersistOrder(orderedIds);
         },
       });

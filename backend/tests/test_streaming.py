@@ -224,6 +224,65 @@ def test_buffer_audio_stream_track_crossfades_selection_changes(tmp_path) -> Non
 		track.stop()
 
 
+def test_buffer_audio_stream_track_fades_in_from_silence_on_first_selection_change(tmp_path) -> None:
+	buffer_path = tmp_path / "audio.buffer"
+
+	with AudioBuffer(
+		filename=str(buffer_path),
+		channels=1,
+		sample_rate=48_000,
+		duration_sec=1,
+		create=True,
+	) as writer:
+		writer.write(np.full((480, 1), 12_000, dtype=np.int16))
+
+	track = BufferAudioStreamTrack(
+		buffer_path=str(buffer_path),
+		total_channels=1,
+		sample_rate=48_000,
+		input_sources=[],
+	)
+	try:
+		chunk = np.full((track.samples_per_frame, 1), 12_000, dtype=np.int16)
+		track.update_selection(input_sources=[(0, 0.0)], replay_seconds=0.0)
+		mixed = track._mix_selected_channels(chunk)
+
+		assert mixed[0] < mixed[min(track.fade_frames - 1, mixed.shape[0] - 1)]
+		assert mixed[-1] == 12_000
+	finally:
+		track.stop()
+
+
+def test_buffer_audio_stream_track_fades_playhead_jump_when_entering_replay(tmp_path) -> None:
+	buffer_path = tmp_path / "audio.buffer"
+
+	with AudioBuffer(
+		filename=str(buffer_path),
+		channels=1,
+		sample_rate=48_000,
+		duration_sec=2,
+		create=True,
+	) as writer:
+		writer.write(np.full((track_frame_count := 2_000, 1), 12_000, dtype=np.int16))
+
+	track = BufferAudioStreamTrack(
+		buffer_path=str(buffer_path),
+		total_channels=1,
+		sample_rate=48_000,
+		input_sources=[(0, 0.0)],
+	)
+	try:
+		track._last_output_sample = 12_000.0
+		track.update_selection(input_sources=[(0, 0.0)], replay_seconds=0.02)
+		chunk = np.zeros((track.samples_per_frame, 1), dtype=np.int16)
+		mixed = track._mix_selected_channels(chunk)
+
+		assert mixed[0] > mixed[min(track.fade_frames - 1, mixed.shape[0] - 1)]
+		assert mixed[-1] == 0
+	finally:
+		track.stop()
+
+
 def test_webrtc_manager_handles_control_messages(tmp_path) -> None:
 	buffer_path = tmp_path / "audio.buffer"
 	with AudioBuffer(

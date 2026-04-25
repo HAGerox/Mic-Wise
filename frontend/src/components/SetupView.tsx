@@ -13,7 +13,7 @@ import type {
   SettingsResponse,
   SettingsUpdateRequest,
 } from '../types/api';
-import type { ProgramChannelDraft } from '../types/ui';
+import type { ProgramChannelDraft, SetupTab } from '../types/ui';
 
 const PROGRAM_AUTOSAVE_DELAY_MS = 450;
 
@@ -172,12 +172,14 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove }: ProgramR
 
 interface SetupViewProps {
   hidden: boolean;
+  setupTab: SetupTab;
   settings: SettingsResponse | null;
   syncStatus: SceneSyncStatusResponse | null;
   channels: ChannelResponse[];
   scenes: SceneResponse[];
   audioDevices: AudioInputDeviceResponse[];
   activeSceneId: number | null;
+  onSetSetupTab: (tab: SetupTab) => void;
   onSaveSettings: (payload: SettingsUpdateRequest) => Promise<void>;
   onAddChannel: () => Promise<void>;
   onSaveChannel: (channelId: number, payload: ChannelUpdateRequest) => Promise<void>;
@@ -200,12 +202,14 @@ interface SetupViewProps {
 
 export function SetupView({
   hidden,
+  setupTab,
   settings,
   syncStatus,
   channels,
   scenes,
   audioDevices,
   activeSceneId,
+  onSetSetupTab,
   onSaveSettings,
   onAddChannel,
   onSaveChannel,
@@ -300,36 +304,75 @@ export function SetupView({
     );
   }, [activeScene]);
 
+  const setupSections: Array<{ id: SetupTab; label: string; description: string }> = [
+    { id: 'general', label: 'General', description: 'Audio engine and core show defaults.' },
+    { id: 'channels', label: 'Channels', description: 'Patch, trim, and name microphones.' },
+    { id: 'scenes', label: 'Scenes', description: 'Build scene checklists and cue mapping.' },
+    { id: 'automation', label: 'Automation', description: 'External sync plus alerts.' },
+  ];
+
   return (
     <section id="setup-view" className={`view-panel ${hidden ? 'is-hidden' : ''}`}>
-      <section className="setup-hero panel-card">
-        <div>
-          <span className="setup-eyebrow">Setup</span>
-          <h2>Show configuration</h2>
-          <p>Program channels, choose the input device, build scenes, and set up cue and alert integrations from one place.</p>
-        </div>
-        <div className="panel-heading-actions">
-          <button type="button" className="secondary" onClick={() => void onExportShowfile()}>Export showfile</button>
-          <button type="button" onClick={() => importInputRef.current?.click()}>Import showfile</button>
-          <input
-            ref={importInputRef}
-            className="is-hidden"
-            type="file"
-            accept=".json,.micwise.json"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              if (!file) {
-                return;
-              }
-              void onImportShowfile(file);
-              event.target.value = '';
-            }}
-          />
-        </div>
-      </section>
+      <section className="setup-shell">
+        <aside className="setup-sidebar panel-card" aria-label="Setup sections">
+          <div className="setup-sidebar-header">
+            <div>
+              <span className="setup-eyebrow">Setup</span>
+              <h2>Show configuration</h2>
+              <p>Keep programming compact and easy to scan.</p>
+            </div>
+            <div className="panel-heading-actions">
+              <button type="button" className="secondary" onClick={() => void onExportShowfile()}>Export</button>
+              <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
+              <input
+                ref={importInputRef}
+                className="is-hidden"
+                type="file"
+                accept=".json,.micwise.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  if (!file) {
+                    return;
+                  }
+                  void onImportShowfile(file);
+                  event.target.value = '';
+                }}
+              />
+            </div>
+          </div>
 
-      <div className="setup-overview-grid">
-        <section className="panel-card setup-summary-card">
+          <nav className="setup-nav" aria-label="Setup navigation">
+            {setupSections.map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                className={`setup-nav-item ${setupTab === section.id ? 'is-active' : ''}`}
+                onClick={() => onSetSetupTab(section.id)}
+              >
+                <strong>{section.label}</strong>
+                <span>{section.description}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div className="setup-sidebar-summary">
+            <div className="setup-stat-grid">
+              <div className="setup-stat-card">
+                <span>Display channels</span>
+                <strong>{orderedChannels.length}</strong>
+              </div>
+              <div className="setup-stat-card">
+                <span>Scenes</span>
+                <strong>{orderedScenes.length}</strong>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <div className="setup-content">
+          <section className={`setup-section ${setupTab === 'general' ? '' : 'is-hidden'}`}>
+            <div className="setup-overview-grid">
+              <section className="panel-card setup-summary-card">
           <div>
             <h3>Mix & show defaults</h3>
             <p>Keep the top-level show settings easy to find and easy to tweak.</p>
@@ -368,9 +411,9 @@ export function SetupView({
               <strong>{orderedScenes.length}</strong>
             </div>
           </div>
-        </section>
+              </section>
 
-        <section className="panel-card setup-summary-card">
+              <section className="panel-card setup-summary-card">
           <div>
             <h3>Audio engine</h3>
             <p>Switch between synthetic development audio and a real capture device without leaving the browser.</p>
@@ -496,10 +539,11 @@ export function SetupView({
               ? `${selectedDevice.max_input_channels} inputs available on ${selectedDevice.hostapi_name} · default ${selectedDevice.default_sample_rate} Hz`
               : 'Use Auto to follow the system default input, or pick a specific CoreAudio / ASIO / ALSA-style device.'}
           </p>
-        </section>
-      </div>
+              </section>
+            </div>
+          </section>
 
-      <section id="setup-program-panel" className="setup-panel panel-card">
+          <section id="setup-program-panel" className={`setup-panel panel-card ${setupTab === 'channels' ? '' : 'is-hidden'}`}>
         <div className="panel-heading panel-heading--nested">
           <div>
             <h3>Channel programming</h3>
@@ -535,9 +579,9 @@ export function SetupView({
             </tbody>
           </table>
         </div>
-      </section>
+          </section>
 
-      <section id="setup-scenes-panel" className="setup-panel panel-card">
+          <section id="setup-scenes-panel" className={`setup-panel panel-card ${setupTab === 'scenes' ? '' : 'is-hidden'}`}>
         <div className="panel-heading panel-heading--nested">
           <div>
             <h3>Scene programming</h3>
@@ -735,10 +779,11 @@ export function SetupView({
             </div>
           </section>
         </div>
-      </section>
+          </section>
 
-      <div className="setup-overview-grid">
-        <section className="scene-sync-settings-panel panel-card">
+          <section className={`setup-section ${setupTab === 'automation' ? '' : 'is-hidden'}`}>
+            <div className="setup-overview-grid">
+              <section className="scene-sync-settings-panel panel-card">
           <div>
             <h3>External scene sync</h3>
             <p>Optional QLab / desk integration. It stays off until you enable it and map cues to scenes.</p>
@@ -865,9 +910,9 @@ export function SetupView({
           </div>
 
           <p id="external-sync-status" className="scene-sync-status">{buildExternalSyncStatusText(syncStatus)}</p>
-        </section>
+              </section>
 
-        <section className="scene-sync-settings-panel panel-card">
+              <section className="scene-sync-settings-panel panel-card">
           <div>
             <h3>Alerts & RadioWorld</h3>
             <p>Detect pops, wind rumble, and feedback risk locally, show browser popups, and optionally mirror alerts into RadioWorld.</p>
@@ -974,8 +1019,11 @@ export function SetupView({
           </div>
 
           <p className="setup-helper-text">RadioWorld alerts broadcast over UDP on the local network using the Orbital-style chatbox protocol you supplied.</p>
-        </section>
-      </div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </section>
     </section>
   );
 }

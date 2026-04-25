@@ -47,7 +47,7 @@ export type AppStateAction =
 
 export const initialAppState: AppState = {
   activeView: 'monitor',
-  setupTab: 'program',
+  setupTab: 'channels',
   selectedChannelIds: new Set<number>(),
   modalChannelId: null,
   modalScrubSeconds: 0,

@@ -21,6 +21,7 @@ import { useWaveform } from './hooks/useWaveform';
 import { clampGainDb, sortChannels, sortScenes } from './lib/format';
 import {
   getSceneChecklistStats,
+  normaliseNumberOrder,
   normaliseActiveView,
   resolveActiveSceneId,
 } from './lib/ui-logic';
@@ -524,24 +525,47 @@ function AppContent(): JSX.Element {
   }, [dispatch, state.activeView, state.layoutMode]);
 
   const handlePersistOrder = useCallback(async (orderedIds: number[]): Promise<void> => {
+    const fallbackOrderedIds = sortChannels(channels).map((channel) => channel.id);
+    const safeOrderedIds = normaliseNumberOrder(orderedIds, fallbackOrderedIds);
     const channelById = new Map(channels.map((channel) => [channel.id, channel]));
-    const changedChannels = orderedIds
+    const changedChannels = safeOrderedIds
       .map((channelId, sortIndex) => ({ channelId, sortIndex, channel: channelById.get(channelId) ?? null }))
       .filter(({ channel, sortIndex }) => channel && channel.sort_index !== sortIndex)
       .map(({ channelId, sortIndex }) => ({ id: channelId, sort_index: sortIndex }));
 
+    const nextChannels = safeOrderedIds
+      .map((channelId, sortIndex) => {
+        const channel = channelById.get(channelId) ?? null;
+        if (!channel) {
+          return null;
+        }
+
+        return {
+          ...channel,
+          sort_index: sortIndex,
+        };
+      })
+      .filter((channel): channel is ChannelResponse => Boolean(channel));
+
     queryClient.setQueryData<ChannelResponse[]>(
       ['channels'],
-      orderedIds.map((channelId, sortIndex) => ({
-        ...(channelById.get(channelId) as ChannelResponse),
-        sort_index: sortIndex,
-      })),
+      nextChannels,
     );
 
-    await Promise.all(
-      changedChannels.map((channel) => updateChannel(channel.id, { sort_index: channel.sort_index })),
-    );
-  }, [channels, queryClient]);
+    if (changedChannels.length === 0) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        changedChannels.map((channel) => updateChannel(channel.id, { sort_index: channel.sort_index })),
+      );
+    } catch (error) {
+      console.error('Unable to persist channel order', error);
+      await queryClient.invalidateQueries({ queryKey: ['channels'] });
+      setStatusText('Channel order failed');
+    }
+  }, [channels, queryClient, setStatusText]);
 
   const handleChannelInteraction = useCallback(async (channelId: number): Promise<void> => {
     const nextSelection = getNextSelectionAfterInteraction(state.selectedChannelIds, channelId, state.multiListen);
@@ -591,9 +615,10 @@ function AppContent(): JSX.Element {
   }, [activeSceneIndex, dispatch, orderedScenes, patchSettings]);
 
   const handleAddChannel = useCallback(async (): Promise<void> => {
+    dispatch({ type: 'setSetupTab', payload: 'channels' });
     await createChannel({});
     await queryClient.invalidateQueries({ queryKey: ['channels'] });
-  }, [queryClient]);
+  }, [dispatch, queryClient]);
 
   const handleSaveChannel = useCallback(async (channelId: number, payload: ChannelUpdateRequest): Promise<void> => {
     const updatedChannel = await updateChannel(channelId, payload);
@@ -629,6 +654,7 @@ function AppContent(): JSX.Element {
   const handleAddScene = useCallback(async (): Promise<void> => {
     const createdScene = await createScene({});
     dispatch({ type: 'setActiveView', payload: 'setup' });
+    dispatch({ type: 'setSetupTab', payload: 'scenes' });
     dispatch({ type: 'setActiveSceneId', payload: createdScene.id });
     queryClient.setQueryData<SceneResponse[]>(['scenes'], (current = []) => sortScenes([...current, createdScene]));
     await patchSettings({
@@ -820,12 +846,14 @@ function AppContent(): JSX.Element {
 
       <SetupView
         hidden={state.activeView !== 'setup'}
+        setupTab={state.setupTab}
         settings={settings}
         syncStatus={syncStatus}
         channels={channels}
         scenes={scenes}
         audioDevices={audioDevices}
         activeSceneId={state.activeSceneId}
+        onSetSetupTab={(tab) => dispatch({ type: 'setSetupTab', payload: tab })}
         onSaveSettings={handleSaveSettings}
         onAddChannel={handleAddChannel}
         onSaveChannel={handleSaveChannel}
