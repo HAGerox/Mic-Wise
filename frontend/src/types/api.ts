@@ -1,5 +1,6 @@
 export type SceneSyncTransport = 'off' | 'osc' | 'midi' | 'both';
 export type SceneAssignmentState = 'off' | 'ready' | 'onstage';
+export type AudioSourceMode = 'synthetic' | 'sounddevice';
 
 export interface HealthResponse {
   status: string;
@@ -11,7 +12,8 @@ export interface SettingsResponse {
   channel_count: number;
   buffer_duration_sec: number;
   block_size: number;
-  audio_source_mode: string;
+  audio_source_mode: AudioSourceMode;
+  audio_input_device: string | null;
   master_gain_db: number;
   multi_listen_enabled: boolean;
   active_mode: string;
@@ -22,9 +24,20 @@ export interface SettingsResponse {
   external_sync_osc_host: string;
   external_sync_osc_port: number;
   external_sync_midi_input_name: string | null;
+  alerts_enabled: boolean;
+  alert_popup_duration_sec: number;
+  radioworld_enabled: boolean;
+  radioworld_flash_enabled: boolean;
+  radioworld_hold_seconds: number;
 }
 
 export interface SettingsUpdateRequest {
+  sample_rate?: number | null;
+  channel_count?: number | null;
+  buffer_duration_sec?: number | null;
+  block_size?: number | null;
+  audio_source_mode?: AudioSourceMode | 'hardware' | null;
+  audio_input_device?: string | null;
   master_gain_db?: number | null;
   multi_listen_enabled?: boolean | null;
   active_mode?: string | null;
@@ -35,6 +48,21 @@ export interface SettingsUpdateRequest {
   external_sync_osc_host?: string | null;
   external_sync_osc_port?: number | null;
   external_sync_midi_input_name?: string | null;
+  alerts_enabled?: boolean | null;
+  alert_popup_duration_sec?: number | null;
+  radioworld_enabled?: boolean | null;
+  radioworld_flash_enabled?: boolean | null;
+  radioworld_hold_seconds?: number | null;
+}
+
+export interface AudioInputDeviceResponse {
+  selector: string;
+  name: string;
+  hostapi_name: string;
+  display_name: string;
+  max_input_channels: number;
+  default_sample_rate: number;
+  is_default: boolean;
 }
 
 export interface ChannelResponse {
@@ -135,6 +163,86 @@ export interface ChannelWaveformResponse {
   input_index: number | null;
   seconds: number;
   points: number[];
+}
+
+export interface AudioAlertResponse {
+  id: string;
+  kind: 'pop' | 'wind' | 'feedback';
+  severity: 'warning' | 'critical';
+  input_index: number;
+  title: string;
+  message: string;
+  score: number;
+  started_at: number;
+  updated_at: number;
+  channel_ids: number[];
+  channel_numbers: number[];
+  channel_names: string[];
+}
+
+export interface ShowfileSceneAssignmentPayload {
+  channel_number: number;
+  state: SceneAssignmentState;
+}
+
+export interface ShowfileChannelPayload {
+  number: number;
+  name: string;
+  photo_path: string | null;
+  input_index: number | null;
+  gain_db: number;
+  is_record_enabled: boolean;
+  sort_index: number;
+  position_x: number;
+  position_y: number;
+}
+
+export interface ShowfileScenePayload {
+  name: string;
+  order_index: number;
+  sync_osc_address: string | null;
+  sync_osc_argument: string | null;
+  sync_midi_pattern: string | null;
+  channel_assignments: ShowfileSceneAssignmentPayload[];
+}
+
+export interface ShowfileSettingsPayload {
+  sample_rate: number;
+  channel_count: number;
+  buffer_duration_sec: number;
+  block_size: number;
+  audio_source_mode: AudioSourceMode;
+  audio_input_device: string | null;
+  master_gain_db: number;
+  multi_listen_enabled: boolean;
+  active_mode: string;
+  scene_mode_enabled: boolean;
+  active_scene_order_index: number | null;
+  external_sync_enabled: boolean;
+  external_sync_transport: SceneSyncTransport;
+  external_sync_osc_host: string;
+  external_sync_osc_port: number;
+  external_sync_midi_input_name: string | null;
+  alerts_enabled: boolean;
+  alert_popup_duration_sec: number;
+  radioworld_enabled: boolean;
+  radioworld_flash_enabled: boolean;
+  radioworld_hold_seconds: number;
+}
+
+export interface ShowfilePayload {
+  format: string;
+  version: number;
+  exported_at: string | null;
+  settings: ShowfileSettingsPayload;
+  channels: ShowfileChannelPayload[];
+  scenes: ShowfileScenePayload[];
+}
+
+export interface ShowfileImportResponse {
+  status: string;
+  channels: number;
+  scenes: number;
 }
 
 export interface WebRtcOfferRequest {

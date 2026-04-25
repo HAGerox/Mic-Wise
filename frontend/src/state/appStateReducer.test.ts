@@ -72,6 +72,22 @@ describe('appStateReducer', () => {
     expect(secondToggle.sceneChecklistById.get(7)?.has(3)).toBe(false);
   });
 
+  it('can reset all scene checklist state at once', () => {
+    const populatedState = {
+      ...initialAppState,
+      sceneChecklistById: new Map([
+        [1, new Set([1, 2])],
+        [2, new Set([4])],
+      ]),
+    };
+
+    const nextState = appStateReducer(populatedState, {
+      type: 'resetAllSceneChecklists',
+    });
+
+    expect(nextState.sceneChecklistById.size).toBe(0);
+  });
+
   it('reconciles selection and modal ids when channels disappear', () => {
     const populatedState = {
       ...initialAppState,

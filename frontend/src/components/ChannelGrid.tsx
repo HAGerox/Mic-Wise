@@ -5,7 +5,7 @@ import Sortable from 'sortablejs';
 import { ChannelCard } from './ChannelCard';
 import { dbToLinearGain, sortChannels } from '../lib/format';
 import { getShowChannelVisualState } from '../lib/ui-logic';
-import type { ChannelResponse, MeterChannelSnapshot, SceneResponse } from '../types/api';
+import type { AudioAlertResponse, ChannelResponse, MeterChannelSnapshot, SceneResponse } from '../types/api';
 import type { ActiveView, ShowChannelVisualState } from '../types/ui';
 
 function getSceneAssignmentState(scene: SceneResponse | null, channelId: number): string {
@@ -32,6 +32,8 @@ function getVisualState(
 interface ChannelGridProps {
   channels: ChannelResponse[];
   meterMap: Map<number, MeterChannelSnapshot>;
+  meterHistoryMap: Map<number, number[]>;
+  activeAlertsByChannelId: Map<number, AudioAlertResponse>;
   selectedChannelIds: Set<number>;
   activeView: ActiveView;
   layoutMode: boolean;
@@ -47,6 +49,8 @@ interface ChannelGridProps {
 export function ChannelGrid({
   channels,
   meterMap,
+  meterHistoryMap,
+  activeAlertsByChannelId,
   selectedChannelIds,
   activeView,
   layoutMode,
@@ -116,8 +120,12 @@ export function ChannelGrid({
         const meter = channel.input_index === null || channel.input_index === undefined
           ? null
           : meterMap.get(channel.input_index + 1) ?? null;
+        const meterHistory = channel.input_index === null || channel.input_index === undefined
+          ? []
+          : meterHistoryMap.get(channel.input_index + 1) ?? [];
         const combinedGainLinear = dbToLinearGain((channel.gain_db ?? 0) + masterGainDb);
         const level = meter ? Math.min(meter.rms * combinedGainLinear * 100, 100) : 0;
+        const rmsHistory = meterHistory.map((value) => Math.min(value * combinedGainLinear, 1));
         const visualState = getVisualState(activeView, activeScene, checklist, channel.id);
 
         return (
@@ -125,6 +133,8 @@ export function ChannelGrid({
             key={channel.id}
             channel={channel}
             level={level}
+            rmsHistory={rmsHistory}
+            activeAlert={activeAlertsByChannelId.get(channel.id) ?? null}
             isSelected={selectedChannelIds.has(channel.id)}
             isLayoutMode={layoutMode}
             isShowMode={activeView === 'show'}

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { MODAL_WAVEFORM_WINDOW_SECONDS } from '../hooks/useWaveform';
+import { buildWaveformRulerMarks } from '../lib/ui-logic';
 import type { ChannelWaveformResponse } from '../types/api';
 
 function resizeCanvas(canvas: HTMLCanvasElement): {
@@ -35,6 +36,18 @@ function drawGrid(context: CanvasRenderingContext2D, width: number, height: numb
     context.lineTo(width, y);
     context.stroke();
   }
+
+  const rulerMarks = buildWaveformRulerMarks(MODAL_WAVEFORM_WINDOW_SECONDS, 60, 15, 30);
+  for (const mark of rulerMarks) {
+    const x = width * mark.position;
+    context.beginPath();
+    context.setLineDash(mark.kind === 'major' || mark.kind === 'live' ? [1, 0] : [3, 4]);
+    context.strokeStyle = mark.kind === 'live' ? 'rgba(248, 250, 252, 0.22)' : 'rgba(148, 163, 184, 0.1)';
+    context.moveTo(x, 0);
+    context.lineTo(x, height);
+    context.stroke();
+  }
+  context.setLineDash([]);
 }
 
 interface WaveformCanvasProps {

@@ -7,8 +7,8 @@ import { computeWaveformDisplayPoints } from '../lib/ui-logic';
 import type { ChannelWaveformResponse } from '../types/api';
 
 export const MODAL_WAVEFORM_WINDOW_SECONDS = 300;
-export const MODAL_WAVEFORM_POINTS = 360;
-const MODAL_WAVEFORM_REFRESH_MS = 900;
+export const MODAL_WAVEFORM_POINTS = 720;
+const MODAL_WAVEFORM_REFRESH_MS = 750;
 const MODAL_WAVEFORM_RENDER_MS = 33;
 
 export function useWaveform(channelId: number | null): {

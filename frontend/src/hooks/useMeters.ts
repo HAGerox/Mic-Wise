@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { appendMeterHistoryPoint } from '../lib/ui-logic';
 import type { MeterChannelSnapshot, MeterSnapshotResponse } from '../types/api';
+
+const METER_HISTORY_POINTS = 28;
 
 function snapshotToMap(
   snapshot: MeterSnapshotResponse | null | undefined,
@@ -14,8 +17,11 @@ interface UseMetersOptions {
   onError?: () => void;
 }
 
-export function useMeters({ initialSnapshot, onOpen, onError }: UseMetersOptions): Map<number, MeterChannelSnapshot> {
+export function useMeters(
+  { initialSnapshot, onOpen, onError }: UseMetersOptions,
+): { meterMap: Map<number, MeterChannelSnapshot>; meterHistoryMap: Map<number, number[]> } {
   const [meterMap, setMeterMap] = useState<Map<number, MeterChannelSnapshot>>(() => snapshotToMap(initialSnapshot));
+  const [meterHistoryMap, setMeterHistoryMap] = useState<Map<number, number[]>>(() => new Map());
   const onOpenRef = useRef(onOpen);
   const onErrorRef = useRef(onError);
 
@@ -29,10 +35,29 @@ export function useMeters({ initialSnapshot, onOpen, onError }: UseMetersOptions
 
   const applySnapshot = useCallback((snapshot: MeterSnapshotResponse) => {
     setMeterMap(snapshotToMap(snapshot));
+    setMeterHistoryMap((currentHistoryMap) => {
+      const nextHistoryMap = new Map<number, number[]>();
+      for (const channelMeter of snapshot.channels) {
+        nextHistoryMap.set(
+          channelMeter.channel,
+          appendMeterHistoryPoint(
+            currentHistoryMap.get(channelMeter.channel) ?? [],
+            channelMeter.rms,
+            METER_HISTORY_POINTS,
+          ),
+        );
+      }
+      return nextHistoryMap;
+    });
   }, []);
 
   useEffect(() => {
     setMeterMap(snapshotToMap(initialSnapshot));
+    setMeterHistoryMap(
+      new Map(
+        (initialSnapshot?.channels ?? []).map((channelMeter) => [channelMeter.channel, [Math.max(0, channelMeter.rms)]])
+      ),
+    );
   }, [initialSnapshot]);
 
   useEffect(() => {
@@ -54,5 +79,8 @@ export function useMeters({ initialSnapshot, onOpen, onError }: UseMetersOptions
     };
   }, [applySnapshot]);
 
-  return meterMap;
+  return {
+    meterMap,
+    meterHistoryMap,
+  };
 }

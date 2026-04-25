@@ -9,13 +9,10 @@ interface ToolbarProps {
   activeSceneName: string;
   showCheckedCount: number;
   showTotalCount: number;
-  canGoToPreviousScene: boolean;
-  canGoToNextScene: boolean;
   onSetActiveView: (view: ActiveView) => void;
   onToggleListenMode: () => void;
   onToggleLayoutMode: () => void;
   onStopListening: () => void;
-  onNavigateScene: (offset: number) => void;
 }
 
 export function Toolbar({
@@ -27,13 +24,10 @@ export function Toolbar({
   activeSceneName,
   showCheckedCount,
   showTotalCount,
-  canGoToPreviousScene,
-  canGoToNextScene,
   onSetActiveView,
   onToggleListenMode,
   onToggleLayoutMode,
   onStopListening,
-  onNavigateScene,
 }: ToolbarProps): JSX.Element {
   return (
     <section className="controls toolbar">
@@ -70,30 +64,6 @@ export function Toolbar({
             </span>
             <span className="button-label">{multiListen ? 'Multi listen' : 'Single listen'}</span>
           </button>
-
-          <div id="show-scene-stepper" className={`scene-stepper ${activeView === 'show' ? '' : 'is-hidden'}`} aria-label="Scene navigation">
-            <button
-              id="scene-prev"
-              className="secondary icon-button"
-              type="button"
-              aria-label="Previous scene"
-              disabled={!canGoToPreviousScene}
-              onClick={() => onNavigateScene(-1)}
-            >
-              <svg viewBox="0 0 24 24" focusable="false"><path d="m15 18-6-6 6-6"></path></svg>
-            </button>
-            <span className="toolbar-pill toolbar-pill--scene">Scene <strong id="scene-status-text">{activeSceneName}</strong></span>
-            <button
-              id="scene-next"
-              className="secondary icon-button"
-              type="button"
-              aria-label="Next scene"
-              disabled={!canGoToNextScene}
-              onClick={() => onNavigateScene(1)}
-            >
-              <svg viewBox="0 0 24 24" focusable="false"><path d="m9 18 6-6-6-6"></path></svg>
-            </button>
-          </div>
 
           <button
             id="layout-mode-toggle"
@@ -137,6 +107,9 @@ export function Toolbar({
       <div className="toolbar-status-strip" aria-label="Current system status">
         <span className="toolbar-pill">Audio <strong id="status-text">{statusText}</strong></span>
         <span className="toolbar-pill">Selected <strong id="selection-count-text">{selectedCount} channel{selectedCount === 1 ? '' : 's'}</strong></span>
+        <span id="show-scene-pill" className={`toolbar-pill ${activeView === 'show' ? '' : 'is-hidden'}`}>
+          Scene <strong id="scene-status-text">{activeSceneName}</strong>
+        </span>
         <span id="show-progress-pill" className={`toolbar-pill ${activeView === 'show' ? '' : 'is-hidden'}`}>
           Mic check <strong id="show-progress-text">{showCheckedCount}/{showTotalCount} checked</strong>
         </span>

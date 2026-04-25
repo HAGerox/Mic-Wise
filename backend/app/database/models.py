@@ -26,6 +26,7 @@ class SettingsRecord(Base):
     buffer_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False)
     block_size: Mapped[int] = mapped_column(Integer, nullable=False)
     audio_source_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="synthetic")
+    audio_input_device: Mapped[str | None] = mapped_column(String(255), nullable=True)
     master_gain_db: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     multi_listen_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     active_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="monitor")
@@ -36,6 +37,11 @@ class SettingsRecord(Base):
     external_sync_osc_host: Mapped[str] = mapped_column(String(128), nullable=False, default="0.0.0.0")
     external_sync_osc_port: Mapped[int] = mapped_column(Integer, nullable=False, default=53001)
     external_sync_midi_input_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    alerts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    alert_popup_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=6)
+    radioworld_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    radioworld_flash_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    radioworld_hold_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

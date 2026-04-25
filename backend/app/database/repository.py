@@ -14,6 +14,8 @@ from app.database.session import DatabaseManager
 
 DEFAULT_CHANNEL_NAME_PATTERN = re.compile(r"^Channel (\d+)$")
 SCENE_CHANNEL_STATES = {"off", "ready", "onstage"}
+SHOWFILE_FORMAT = "micwise-showfile"
+SHOWFILE_FORMAT_VERSION = 1
 
 
 def _normalise_optional_text(value: object | None) -> str | None:
@@ -82,6 +84,42 @@ async def _ensure_show_file_compatibility(database: DatabaseManager) -> None:
                     "ALTER TABLE settings ADD COLUMN external_sync_midi_input_name VARCHAR(128)",
                 ),
             )
+        if settings_columns and "audio_input_device" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN audio_input_device VARCHAR(255)",
+                ),
+            )
+        if settings_columns and "alerts_enabled" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN alerts_enabled BOOLEAN NOT NULL DEFAULT 1",
+                ),
+            )
+        if settings_columns and "alert_popup_duration_sec" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN alert_popup_duration_sec INTEGER NOT NULL DEFAULT 6",
+                ),
+            )
+        if settings_columns and "radioworld_enabled" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN radioworld_enabled BOOLEAN NOT NULL DEFAULT 0",
+                ),
+            )
+        if settings_columns and "radioworld_flash_enabled" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN radioworld_flash_enabled BOOLEAN NOT NULL DEFAULT 0",
+                ),
+            )
+        if settings_columns and "radioworld_hold_seconds" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN radioworld_hold_seconds INTEGER NOT NULL DEFAULT 8",
+                ),
+            )
 
         channel_columns = {
             row[1]
@@ -140,12 +178,18 @@ async def initialise_show_file(
                 buffer_duration_sec=settings.default_buffer_duration_sec,
                 block_size=settings.default_block_size,
                 audio_source_mode=settings.audio_source_mode,
+                audio_input_device=None,
                 master_gain_db=0.0,
                 scene_mode_enabled=False,
                 external_sync_enabled=False,
                 external_sync_transport="off",
                 external_sync_osc_host="0.0.0.0",
                 external_sync_osc_port=53001,
+                alerts_enabled=True,
+                alert_popup_duration_sec=6,
+                radioworld_enabled=False,
+                radioworld_flash_enabled=False,
+                radioworld_hold_seconds=8,
             )
             session.add(settings_row)
             await session.flush()
@@ -393,7 +437,194 @@ async def update_settings(
             raise RuntimeError("Show settings have not been initialised")
 
         for field_name, value in changes.items():
+            if field_name in {"audio_input_device", "external_sync_midi_input_name"}:
+                value = _normalise_optional_text(value)
             setattr(settings_row, field_name, value)
+
+        await session.commit()
+        await session.refresh(settings_row)
+        return settings_row
+
+
+def _serialise_showfile_settings(settings_row: SettingsRecord, active_scene: Scene | None) -> dict[str, object]:
+    """Convert persisted settings into a portable showfile payload."""
+    return {
+        "sample_rate": settings_row.sample_rate,
+        "channel_count": settings_row.channel_count,
+        "buffer_duration_sec": settings_row.buffer_duration_sec,
+        "block_size": settings_row.block_size,
+        "audio_source_mode": settings_row.audio_source_mode,
+        "audio_input_device": settings_row.audio_input_device,
+        "master_gain_db": settings_row.master_gain_db,
+        "multi_listen_enabled": settings_row.multi_listen_enabled,
+        "active_mode": settings_row.active_mode,
+        "scene_mode_enabled": settings_row.scene_mode_enabled,
+        "active_scene_order_index": active_scene.order_index if active_scene is not None else None,
+        "external_sync_enabled": settings_row.external_sync_enabled,
+        "external_sync_transport": settings_row.external_sync_transport,
+        "external_sync_osc_host": settings_row.external_sync_osc_host,
+        "external_sync_osc_port": settings_row.external_sync_osc_port,
+        "external_sync_midi_input_name": settings_row.external_sync_midi_input_name,
+        "alerts_enabled": settings_row.alerts_enabled,
+        "alert_popup_duration_sec": settings_row.alert_popup_duration_sec,
+        "radioworld_enabled": settings_row.radioworld_enabled,
+        "radioworld_flash_enabled": settings_row.radioworld_flash_enabled,
+        "radioworld_hold_seconds": settings_row.radioworld_hold_seconds,
+    }
+
+
+async def export_showfile(database: DatabaseManager) -> dict[str, object]:
+    """Export the current show as a portable JSON-friendly payload."""
+    settings_row = await get_settings(database)
+    channels = await list_channels(database)
+    scenes = await list_scenes(database)
+    channel_by_id = {channel.id: channel for channel in channels}
+    active_scene = next((scene for scene in scenes if scene.id == settings_row.active_scene_id), None)
+
+    return {
+        "format": SHOWFILE_FORMAT,
+        "version": SHOWFILE_FORMAT_VERSION,
+        "exported_at": settings_row.updated_at.isoformat(),
+        "settings": _serialise_showfile_settings(settings_row, active_scene),
+        "channels": [
+            {
+                "number": channel.number,
+                "name": channel.name,
+                "photo_path": channel.photo_path,
+                "input_index": channel.input_index,
+                "gain_db": channel.gain_db,
+                "is_record_enabled": channel.is_record_enabled,
+                "sort_index": channel.sort_index,
+                "position_x": channel.position_x,
+                "position_y": channel.position_y,
+            }
+            for channel in channels
+        ],
+        "scenes": [
+            {
+                "name": scene.name,
+                "order_index": scene.order_index,
+                "sync_osc_address": scene.sync_osc_address,
+                "sync_osc_argument": scene.sync_osc_argument,
+                "sync_midi_pattern": scene.sync_midi_pattern,
+                "channel_assignments": [
+                    {
+                        "channel_number": channel_by_id[assignment.channel_id].number,
+                        "state": assignment.state,
+                    }
+                    for assignment in scene.channel_assignments
+                    if assignment.channel_id in channel_by_id
+                ],
+            }
+            for scene in scenes
+        ],
+    }
+
+
+def _normalise_showfile_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Validate a showfile-like mapping enough for repository import."""
+    if str(payload.get("format") or "").strip() != SHOWFILE_FORMAT:
+        raise ValueError("Unsupported Mic-Wise showfile format")
+
+    version = int(payload.get("version") or 0)
+    if version != SHOWFILE_FORMAT_VERSION:
+        raise ValueError(f"Unsupported Mic-Wise showfile version: {version}")
+
+    settings_payload = payload.get("settings")
+    if not isinstance(settings_payload, dict):
+        raise ValueError("Showfile settings payload is missing")
+
+    channels_payload = payload.get("channels")
+    if not isinstance(channels_payload, list):
+        raise ValueError("Showfile channels payload is missing")
+
+    scenes_payload = payload.get("scenes")
+    if not isinstance(scenes_payload, list):
+        raise ValueError("Showfile scenes payload is missing")
+
+    return {
+        "settings": settings_payload,
+        "channels": channels_payload,
+        "scenes": scenes_payload,
+    }
+
+
+async def import_showfile(database: DatabaseManager, payload: dict[str, object]) -> SettingsRecord:
+    """Replace the current show contents with an imported showfile payload."""
+    normalised_payload = _normalise_showfile_payload(payload)
+    settings_payload = normalised_payload["settings"]
+    channels_payload = sorted(
+        normalised_payload["channels"],
+        key=lambda channel: (int(channel.get("sort_index", channel.get("number", 0)) or 0), int(channel.get("number", 0) or 0)),
+    )
+    scenes_payload = sorted(
+        normalised_payload["scenes"],
+        key=lambda scene: int(scene.get("order_index", 0) or 0),
+    )
+
+    async with database.session() as session:
+        settings_row = await session.get(SettingsRecord, 1)
+        if settings_row is None:
+            settings_row = SettingsRecord(id=1, sample_rate=48_000, channel_count=16, buffer_duration_sec=300, block_size=480)
+            session.add(settings_row)
+            await session.flush()
+
+        await session.execute(delete(SceneChannel))
+        await session.execute(delete(Scene))
+        await session.execute(delete(Channel))
+        await session.flush()
+
+        number_to_channel_id: dict[int, int] = {}
+        for sort_index, channel_payload in enumerate(channels_payload):
+            channel_number = int(channel_payload.get("number") or (sort_index + 1))
+            channel = Channel(
+                number=channel_number,
+                name=str(channel_payload.get("name") or f"Channel {channel_number}").strip() or f"Channel {channel_number}",
+                photo_path=_normalise_optional_text(channel_payload.get("photo_path")),
+                input_index=int(channel_payload["input_index"]) if channel_payload.get("input_index") is not None else None,
+                gain_db=float(channel_payload.get("gain_db") or 0.0),
+                is_record_enabled=bool(channel_payload.get("is_record_enabled", True)),
+                sort_index=int(channel_payload.get("sort_index", sort_index) or sort_index),
+                position_x=float(channel_payload.get("position_x") or 0.0),
+                position_y=float(channel_payload.get("position_y") or 0.0),
+            )
+            session.add(channel)
+            await session.flush()
+            number_to_channel_id[channel.number] = channel.id
+
+        order_index_to_scene_id: dict[int, int] = {}
+        for order_index, scene_payload in enumerate(scenes_payload):
+            scene = Scene(
+                name=str(scene_payload.get("name") or f"Scene {order_index + 1}").strip() or f"Scene {order_index + 1}",
+                order_index=int(scene_payload.get("order_index", order_index) or order_index),
+                sync_osc_address=_normalise_optional_text(scene_payload.get("sync_osc_address")),
+                sync_osc_argument=_normalise_optional_text(scene_payload.get("sync_osc_argument")),
+                sync_midi_pattern=_normalise_optional_text(scene_payload.get("sync_midi_pattern")),
+            )
+            session.add(scene)
+            await session.flush()
+            order_index_to_scene_id[scene.order_index] = scene.id
+
+            for assignment_payload in scene_payload.get("channel_assignments", []) or []:
+                channel_number = int(assignment_payload.get("channel_number") or 0)
+                channel_id = number_to_channel_id.get(channel_number)
+                state = str(assignment_payload.get("state") or "off").strip().lower()
+                if channel_id is None or state not in SCENE_CHANNEL_STATES or state == "off":
+                    continue
+                session.add(SceneChannel(scene_id=scene.id, channel_id=channel_id, state=state))
+
+        for field_name, value in settings_payload.items():
+            if field_name == "active_scene_order_index":
+                continue
+            if field_name in {"audio_input_device", "external_sync_midi_input_name"}:
+                value = _normalise_optional_text(value)
+            setattr(settings_row, field_name, value)
+
+        active_scene_order_index = settings_payload.get("active_scene_order_index")
+        if active_scene_order_index is None:
+            settings_row.active_scene_id = next(iter(order_index_to_scene_id.values()), None)
+        else:
+            settings_row.active_scene_id = order_index_to_scene_id.get(int(active_scene_order_index))
 
         await session.commit()
         await session.refresh(settings_row)

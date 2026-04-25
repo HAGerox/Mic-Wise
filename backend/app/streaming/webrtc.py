@@ -16,6 +16,9 @@ from app.audio.buffer import AudioBuffer
 from app.audio.playback import playback_sync_delay_frames
 
 
+SELECTION_CROSSFADE_SECONDS = 0.004
+
+
 def db_to_linear_gain(gain_db: float) -> float:
 	"""Convert a gain value in decibels to a linear multiplier."""
 	return float(10 ** (gain_db / 20.0))
@@ -38,8 +41,11 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		self.total_channels = total_channels
 		self.sample_rate = sample_rate
 		self.samples_per_frame = max(1, int(round(AUDIO_PTIME * sample_rate)))
+		self.fade_frames = max(1, int(round(sample_rate * SELECTION_CROSSFADE_SECONDS)))
 		self.live_edge_frames = playback_sync_delay_frames(sample_rate)
 		self.input_sources: list[tuple[int, float]] = []
+		self._transition_from_sources: list[tuple[int, float]] = []
+		self._transition_remaining_frames = 0
 		self._playback_mode = "live"
 		self._read_head = 0
 		self.update_selection(input_sources=input_sources, replay_seconds=replay_seconds, reset_read_head=True)
@@ -68,7 +74,11 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		reset_read_head: bool = False,
 	) -> None:
 		"""Update the mixed input selection without rebuilding the WebRTC transport."""
-		self.input_sources = self._normalise_input_sources(input_sources)
+		normalised_sources = self._normalise_input_sources(input_sources)
+		if normalised_sources != self.input_sources:
+			self._transition_from_sources = list(self.input_sources)
+			self._transition_remaining_frames = self.fade_frames
+		self.input_sources = normalised_sources
 		latest = self.buffer.refresh_write_head()
 		earliest = max(0, latest - self.buffer.capacity)
 		replay_frames = max(0, int(round(float(replay_seconds) * self.sample_rate)))
@@ -81,6 +91,22 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		if reset_read_head or self._playback_mode != "live":
 			self._read_head = self._target_live_read_head(latest)
 		self._playback_mode = "live"
+
+	def _mix_sources(self, chunk: np.ndarray, input_sources: list[tuple[int, float]]) -> np.ndarray:
+		"""Mix a specific set of input sources down to mono."""
+		if not input_sources:
+			return np.zeros(self.samples_per_frame, dtype=np.int16)
+
+		selected = [
+			chunk[:, input_index].astype(np.float32) * gain_linear
+			for input_index, gain_linear in input_sources
+		]
+		if len(selected) == 1:
+			mono = selected[0]
+		else:
+			mono = np.mean(np.stack(selected, axis=1), axis=1)
+
+		return np.clip(np.round(mono), -32_768, 32_767).astype(np.int16)
 
 	def _target_live_read_head(self, latest: int) -> int:
 		"""Return a stable live-edge read position with a small safety cushion."""
@@ -138,19 +164,30 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 
 	def _mix_selected_channels(self, chunk: np.ndarray) -> np.ndarray:
 		"""Mix the selected input channels down to a mono program stream."""
-		if not self.input_sources:
-			return np.zeros(self.samples_per_frame, dtype=np.int16)
+		target_mono = self._mix_sources(chunk, self.input_sources)
+		if self._transition_remaining_frames <= 0 or not self._transition_from_sources:
+			return target_mono
 
-		selected = [
-			chunk[:, input_index].astype(np.float32) * gain_linear
-			for input_index, gain_linear in self.input_sources
-		]
-		if len(selected) == 1:
-			mono = selected[0]
-		else:
-			mono = np.mean(np.stack(selected, axis=1), axis=1)
+		source_mono = self._mix_sources(chunk, self._transition_from_sources)
+		fade_frames = min(self.samples_per_frame, self._transition_remaining_frames)
+		fade_start = self.fade_frames - self._transition_remaining_frames
+		fade_curve = np.clip(
+			(np.arange(fade_frames, dtype=np.float32) + fade_start + 1) / max(self.fade_frames, 1),
+			0.0,
+			1.0,
+		)
 
-		return np.clip(np.round(mono), -32_768, 32_767).astype(np.int16)
+		mixed = target_mono.astype(np.float32)
+		mixed[:fade_frames] = (
+			source_mono[:fade_frames].astype(np.float32) * (1.0 - fade_curve)
+			+ mixed[:fade_frames] * fade_curve
+		)
+
+		self._transition_remaining_frames -= fade_frames
+		if self._transition_remaining_frames <= 0:
+			self._transition_from_sources = []
+
+		return np.clip(np.round(mixed), -32_768, 32_767).astype(np.int16)
 
 	def stop(self) -> None:
 		"""Release the shared buffer when the track ends."""

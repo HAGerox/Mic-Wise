@@ -29,6 +29,7 @@ class SettingsResponse(BaseModel):
     buffer_duration_sec: int
     block_size: int
     audio_source_mode: str
+    audio_input_device: str | None
     master_gain_db: float
     multi_listen_enabled: bool
     active_mode: str
@@ -39,11 +40,22 @@ class SettingsResponse(BaseModel):
     external_sync_osc_host: str
     external_sync_osc_port: int
     external_sync_midi_input_name: str | None
+    alerts_enabled: bool
+    alert_popup_duration_sec: int
+    radioworld_enabled: bool
+    radioworld_flash_enabled: bool
+    radioworld_hold_seconds: int
 
 
 class SettingsUpdateRequest(BaseModel):
     """Persisted UI-level settings for the active show."""
 
+    sample_rate: int | None = None
+    channel_count: int | None = None
+    buffer_duration_sec: int | None = None
+    block_size: int | None = None
+    audio_source_mode: str | None = None
+    audio_input_device: str | None = None
     master_gain_db: float | None = None
     multi_listen_enabled: bool | None = None
     active_mode: str | None = None
@@ -54,6 +66,23 @@ class SettingsUpdateRequest(BaseModel):
     external_sync_osc_host: str | None = None
     external_sync_osc_port: int | None = None
     external_sync_midi_input_name: str | None = None
+    alerts_enabled: bool | None = None
+    alert_popup_duration_sec: int | None = None
+    radioworld_enabled: bool | None = None
+    radioworld_flash_enabled: bool | None = None
+    radioworld_hold_seconds: int | None = None
+
+
+class AudioInputDeviceResponse(BaseModel):
+    """Serialized capture device information for setup UIs."""
+
+    selector: str
+    name: str
+    hostapi_name: str
+    display_name: str
+    max_input_channels: int
+    default_sample_rate: int
+    is_default: bool
 
 
 class ChannelResponse(BaseModel):
@@ -209,6 +238,100 @@ class ChannelWaveformResponse(BaseModel):
     input_index: int | None
     seconds: float
     points: list[float]
+
+
+class AudioAlertResponse(BaseModel):
+    """Active alert mapped onto the current display channels."""
+
+    id: str
+    kind: str
+    severity: str
+    input_index: int
+    title: str
+    message: str
+    score: float
+    started_at: float
+    updated_at: float
+    channel_ids: list[int]
+    channel_numbers: list[int]
+    channel_names: list[str]
+
+
+class ShowfileSceneAssignmentPayload(BaseModel):
+    """Portable scene assignment entry inside an exported showfile."""
+
+    channel_number: int
+    state: str
+
+
+class ShowfileChannelPayload(BaseModel):
+    """Portable channel data stored in a showfile."""
+
+    number: int
+    name: str
+    photo_path: str | None = None
+    input_index: int | None = None
+    gain_db: float = 0.0
+    is_record_enabled: bool = True
+    sort_index: int = 0
+    position_x: float = 0.0
+    position_y: float = 0.0
+
+
+class ShowfileScenePayload(BaseModel):
+    """Portable scene data stored in a showfile."""
+
+    name: str
+    order_index: int
+    sync_osc_address: str | None = None
+    sync_osc_argument: str | None = None
+    sync_midi_pattern: str | None = None
+    channel_assignments: list[ShowfileSceneAssignmentPayload] = []
+
+
+class ShowfileSettingsPayload(BaseModel):
+    """Portable show-wide settings stored in a showfile."""
+
+    sample_rate: int
+    channel_count: int
+    buffer_duration_sec: int
+    block_size: int
+    audio_source_mode: str
+    audio_input_device: str | None = None
+    master_gain_db: float
+    multi_listen_enabled: bool
+    active_mode: str
+    scene_mode_enabled: bool
+    active_scene_order_index: int | None = None
+    external_sync_enabled: bool
+    external_sync_transport: SceneSyncTransport
+    external_sync_osc_host: str
+    external_sync_osc_port: int
+    external_sync_midi_input_name: str | None = None
+    alerts_enabled: bool = True
+    alert_popup_duration_sec: int = 6
+    radioworld_enabled: bool = False
+    radioworld_flash_enabled: bool = False
+    radioworld_hold_seconds: int = 8
+
+
+class ShowfilePayload(BaseModel):
+    """Portable Mic-Wise showfile used for browser import/export."""
+
+    format: str
+    version: int
+    exported_at: str | None = None
+    settings: ShowfileSettingsPayload
+    channels: list[ShowfileChannelPayload]
+    scenes: list[ShowfileScenePayload]
+
+
+class ShowfileImportResponse(BaseModel):
+    """Summary returned after importing a showfile."""
+
+    status: str
+    channels: int
+    scenes: int
 
 
 class WebRTCOfferRequest(BaseModel):

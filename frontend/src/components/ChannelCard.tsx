@@ -1,10 +1,21 @@
 import { memo, useEffect, useRef } from 'react';
 
 import { getInputLabel, isDefaultChannelName } from '../lib/format';
-import type { ChannelResponse } from '../types/api';
+import type { AudioAlertResponse, ChannelResponse } from '../types/api';
 import type { ShowChannelVisualState } from '../types/ui';
 
 const LONG_PRESS_MS = 420;
+
+function buildSparklinePoints(history: number[]): string {
+  const safeHistory = history.length > 0 ? history : [0, 0, 0, 0];
+  return safeHistory
+    .map((value, index) => {
+      const x = safeHistory.length === 1 ? 50 : (index / (safeHistory.length - 1)) * 100;
+      const y = 22 - (Math.min(Math.max(value, 0), 1) * 18);
+      return `${x},${y}`;
+    })
+    .join(' ');
+}
 
 function getBadgeMarkup(visualState: ShowChannelVisualState | null): JSX.Element | null {
   if (!visualState) {
@@ -22,6 +33,8 @@ function getBadgeMarkup(visualState: ShowChannelVisualState | null): JSX.Element
 interface ChannelCardProps {
   channel: ChannelResponse;
   level: number;
+  rmsHistory: number[];
+  activeAlert: AudioAlertResponse | null;
   isSelected: boolean;
   isLayoutMode: boolean;
   isShowMode: boolean;
@@ -33,6 +46,8 @@ interface ChannelCardProps {
 function ChannelCardComponent({
   channel,
   level,
+  rmsHistory,
+  activeAlert,
   isSelected,
   isLayoutMode,
   isShowMode,
@@ -63,6 +78,7 @@ function ChannelCardComponent({
       className={[
         'channel-card',
         isSelected ? 'is-selected' : '',
+        activeAlert ? `has-alert is-alert-${activeAlert.severity}` : '',
         isLayoutMode ? 'is-layout-mode' : '',
         visualState === 'off' ? 'is-show-off' : '',
         visualState === 'pending' ? 'is-show-pending' : '',
@@ -104,9 +120,19 @@ function ChannelCardComponent({
         </div>
         <span className="channel-chip">{getInputLabel(channel)}</span>
       </header>
+      <div className="channel-sparkline-shell" aria-hidden="true">
+        <svg className="channel-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none">
+          <polyline points={buildSparklinePoints(rmsHistory)} />
+        </svg>
+      </div>
       <div className="meter"><div className="meter-mask" style={{ width: `${Math.max(0, 100 - level)}%` }}></div></div>
       <div className="channel-meta-row">
-        <span className="channel-actions">{isLayoutMode ? 'Hold and move' : 'Tap to listen'}</span>
+        <div className="channel-meta-copy">
+          <span className="channel-actions">{isLayoutMode ? 'Hold and move' : 'Tap to listen'}</span>
+          {activeAlert ? (
+            <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
+          ) : null}
+        </div>
         {getBadgeMarkup(visualState)}
       </div>
     </article>

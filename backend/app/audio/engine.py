@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import os
 import multiprocessing as mp
 import time
 from dataclasses import dataclass
 
 import numpy as np
+
+os.environ.setdefault("SD_ENABLE_ASIO", "1")
+
 import sounddevice as sd
 
 from app.audio.buffer import AudioBuffer
+from app.audio.devices import resolve_input_device
 
 
 @dataclass(slots=True)
@@ -42,7 +47,7 @@ class AudioEngineProcess(mp.Process):
 			if self.config.source_mode == "synthetic":
 				self._run_synthetic(buffer)
 				return
-			if self.config.source_mode == "sounddevice":
+			if self.config.source_mode in {"sounddevice", "hardware"}:
 				self._run_sounddevice(buffer)
 				return
 
@@ -106,6 +111,10 @@ class AudioEngineProcess(mp.Process):
 
 	def _run_sounddevice(self, buffer: AudioBuffer) -> None:
 		"""Capture audio from a PortAudio device and write it to the buffer."""
+		resolved_input_device = resolve_input_device(
+			self.config.input_device,
+			required_channels=self.config.channels,
+		)
 
 		def callback(
 			indata: np.ndarray,
@@ -124,7 +133,8 @@ class AudioEngineProcess(mp.Process):
 			channels=self.config.channels,
 			blocksize=self.config.block_size,
 			dtype="int16",
-			device=self.config.input_device,
+			device=resolved_input_device,
+			latency="low",
 			callback=callback,
 		):
 			while not self.stop_event.wait(0.25):

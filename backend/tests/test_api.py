@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
+from app.audio.alerts import AudioAlert
 from app.main import create_app
 
 
@@ -270,3 +273,113 @@ def test_sync_routes_apply_external_scene_event(tmp_path, monkeypatch) -> None:
 		settings_after_event = client.get("/api/settings")
 		assert settings_after_event.status_code == 200
 		assert settings_after_event.json()["active_scene_id"] == created_scene_id
+
+
+def test_active_alerts_route_maps_inputs_to_display_channels(tmp_path, monkeypatch) -> None:
+	configure_test_environment(monkeypatch, tmp_path)
+	with TestClient(create_app()) as client:
+		updated = client.patch("/api/channels/2", json={"input_index": 0})
+		assert updated.status_code == 200
+
+		client.app.state.alert_analysis = SimpleNamespace(
+			get_active_alerts=lambda: [
+				AudioAlert(
+					id="pop-0",
+					kind="pop",
+					severity="critical",
+					input_index=0,
+					title="Pop detected",
+					message="Short impulsive spike detected on the input.",
+					score=0.99,
+					started_at=1.0,
+					updated_at=2.0,
+				),
+			],
+		)
+
+		response = client.get("/api/alerts/active")
+		assert response.status_code == 200
+		assert response.json() == [
+			{
+				"id": "pop-0",
+				"kind": "pop",
+				"severity": "critical",
+				"input_index": 0,
+				"title": "Pop detected",
+				"message": "Short impulsive spike detected on the input.",
+				"score": 0.99,
+				"started_at": 1.0,
+				"updated_at": 2.0,
+				"channel_ids": [1, 2],
+				"channel_numbers": [1, 2],
+				"channel_names": ["Channel 1", "Channel 2"],
+			},
+		]
+
+
+def test_settings_route_accepts_hardware_audio_alias(tmp_path, monkeypatch) -> None:
+	configure_test_environment(monkeypatch, tmp_path)
+	with TestClient(create_app()) as client:
+		monkeypatch.setattr("app.api.routes.resolve_input_device", lambda selector, required_channels: 1)
+
+		async def fake_restart_audio_runtime(_updated_settings) -> None:
+			return None
+
+		client.app.state.restart_audio_runtime = fake_restart_audio_runtime
+		response = client.patch(
+			"/api/settings",
+			json={
+				"audio_source_mode": "hardware",
+				"audio_input_device": "Core Audio::Built-in Microphone",
+				"channel_count": 2,
+			},
+		)
+
+		assert response.status_code == 200
+		assert response.json()["audio_source_mode"] == "sounddevice"
+		assert response.json()["audio_input_device"] == "Core Audio::Built-in Microphone"
+
+
+def test_showfile_export_and_import_routes_round_trip(tmp_path, monkeypatch) -> None:
+	configure_test_environment(monkeypatch, tmp_path)
+	with TestClient(create_app()) as client:
+		updated_channel = client.patch("/api/channels/1", json={"name": "Lead Mic", "gain_db": 3.0})
+		assert updated_channel.status_code == 200
+
+		created_scene = client.post(
+			"/api/scenes",
+			json={
+				"name": "Dress Rehearsal",
+				"channel_assignments": [{"channel_id": 1, "state": "onstage"}],
+			},
+		)
+		assert created_scene.status_code == 201
+
+		exported = client.get("/api/showfile/export")
+		assert exported.status_code == 200
+		payload = exported.json()
+		assert payload["format"] == "micwise-showfile"
+		assert payload["settings"]["audio_source_mode"] == "synthetic"
+		assert payload["channels"][0]["name"] == "Lead Mic"
+
+		payload["settings"]["master_gain_db"] = 5.0
+		payload["settings"]["alert_popup_duration_sec"] = 9
+		payload["channels"][0]["name"] = "Imported Lead"
+		payload["scenes"][0]["name"] = "Imported Scene 1"
+
+		imported = client.post("/api/showfile/import", json=payload)
+		assert imported.status_code == 200
+		assert imported.json() == {"status": "ok", "channels": 4, "scenes": 2}
+
+		settings = client.get("/api/settings")
+		assert settings.status_code == 200
+		assert settings.json()["master_gain_db"] == 5.0
+		assert settings.json()["alert_popup_duration_sec"] == 9
+
+		channels = client.get("/api/channels")
+		assert channels.status_code == 200
+		assert channels.json()[0]["name"] == "Imported Lead"
+
+		scenes = client.get("/api/scenes")
+		assert scenes.status_code == 200
+		assert scenes.json()[0]["name"] == "Imported Scene 1"

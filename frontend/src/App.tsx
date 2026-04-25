@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { listActiveAlerts } from './api/alerts';
 import { getLatestMeters } from './api/meters';
+import { downloadShowfile, importShowfile } from './api/showfile';
 import { createChannel, deleteChannel, listChannels, updateChannel } from './api/channels';
 import { createScene, deleteScene, listScenes, updateScene } from './api/scenes';
-import { getHealth, getSettings, updateSettings } from './api/settings';
+import { getHealth, getSettings, listAudioInputDevices, updateSettings } from './api/settings';
 import { getSyncStatus } from './api/sync';
+import { AlertToasts } from './components/AlertToasts';
 import { ChannelGrid } from './components/ChannelGrid';
 import { ChannelModal } from './components/ChannelModal';
 import { SetupView } from './components/SetupView';
@@ -25,15 +28,22 @@ import { useAppState } from './state/AppStateContext';
 import type {
   ChannelResponse,
   ChannelUpdateRequest,
+  AudioAlertResponse,
   SceneChannelAssignmentRequest,
   SceneResponse,
   SceneUpdateRequest,
   SettingsResponse,
   SettingsUpdateRequest,
+  ShowfilePayload,
 } from './types/api';
 import type { ActiveView, AudioInputSource } from './types/ui';
 
 const SYNC_STATUS_REFRESH_MS = 1500;
+const ALERT_REFRESH_MS = 900;
+const ALERT_SEVERITY_PRIORITY: Record<AudioAlertResponse['severity'], number> = {
+  warning: 1,
+  critical: 2,
+};
 
 function getSceneAssignmentState(scene: SceneResponse | null, channelId: number): string {
   if (!scene) {
@@ -41,13 +51,6 @@ function getSceneAssignmentState(scene: SceneResponse | null, channelId: number)
   }
 
   return scene.channel_assignments.find((assignment) => assignment.channel_id === channelId)?.state ?? 'off';
-}
-
-function getSceneSummary(scene: SceneResponse | null): string {
-  const assignments = scene?.channel_assignments ?? [];
-  const onstageCount = assignments.filter((assignment) => assignment.state === 'onstage').length;
-  const readyCount = assignments.filter((assignment) => assignment.state === 'ready').length;
-  return `${onstageCount} on stage • ${readyCount} about to enter`;
 }
 
 function getCombinedGainDb(channel: ChannelResponse | null, settings: SettingsResponse | null): number {
@@ -60,17 +63,17 @@ function getTransportStatusText(
   modalScrubSeconds: number,
 ): string {
   if (!modalChannelId || !selectedChannelIds.has(modalChannelId)) {
-    return 'Not currently listening';
+    return 'Idle';
   }
 
   if (modalScrubSeconds > 0) {
     const totalSeconds = Math.max(0, Math.round(modalScrubSeconds));
     const minutes = Math.floor(totalSeconds / 60);
     const remainingSeconds = totalSeconds % 60;
-    return `Listening ${minutes}:${String(remainingSeconds).padStart(2, '0')} behind live`;
+    return `Replay ${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
   }
 
-  return 'Listening live';
+  return 'Live';
 }
 
 function getFocusedShowChannelId(
@@ -112,12 +115,44 @@ function getNextSelectionAfterInteraction(
   return [...nextSelection];
 }
 
+function buildActiveAlertsByChannelId(alerts: AudioAlertResponse[]): Map<number, AudioAlertResponse> {
+  const alertMap = new Map<number, AudioAlertResponse>();
+  for (const alert of alerts) {
+    for (const channelId of alert.channel_ids) {
+      const existingAlert = alertMap.get(channelId) ?? null;
+      if (!existingAlert || ALERT_SEVERITY_PRIORITY[alert.severity] > ALERT_SEVERITY_PRIORITY[existingAlert.severity]) {
+        alertMap.set(channelId, alert);
+      }
+    }
+  }
+  return alertMap;
+}
+
+function settingsAffectListening(changes: SettingsUpdateRequest): boolean {
+  return (
+    changes.master_gain_db !== undefined
+    || changes.audio_source_mode !== undefined
+    || changes.audio_input_device !== undefined
+    || changes.sample_rate !== undefined
+    || changes.channel_count !== undefined
+    || changes.block_size !== undefined
+    || changes.buffer_duration_sec !== undefined
+  );
+}
+
+function settingsAffectAudioDeviceOptions(changes: SettingsUpdateRequest): boolean {
+  return changes.audio_source_mode !== undefined || changes.audio_input_device !== undefined;
+}
+
 function AppContent(): JSX.Element {
   const { state, dispatch } = useAppState();
   const queryClient = useQueryClient();
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const monitorViewRef = useRef<HTMLElement | null>(null);
   const monitorDockRef = useRef<HTMLElement | null>(null);
+  const toastTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const seenAlertIdsRef = useRef<Set<string>>(new Set());
+  const [toastAlerts, setToastAlerts] = useState<AudioAlertResponse[]>([]);
 
   const healthQuery = useQuery({
     queryKey: ['health'],
@@ -150,14 +185,32 @@ function AppContent(): JSX.Element {
     refetchInterval: SYNC_STATUS_REFRESH_MS,
     refetchOnWindowFocus: false,
   });
+  const audioDevicesQuery = useQuery({
+    queryKey: ['audioDevices'],
+    queryFn: listAudioInputDevices,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const activeAlertsQuery = useQuery({
+    queryKey: ['activeAlerts'],
+    queryFn: listActiveAlerts,
+    refetchInterval: settingsQuery.data?.alerts_enabled === false ? false : ALERT_REFRESH_MS,
+    refetchOnWindowFocus: false,
+  });
 
   const channels = channelsQuery.data ?? [];
   const scenes = scenesQuery.data ?? [];
   const settings = settingsQuery.data ?? null;
   const syncStatus = syncStatusQuery.data ?? null;
+  const audioDevices = audioDevicesQuery.data ?? [];
+  const activeAlerts = settings?.alerts_enabled === false ? [] : (activeAlertsQuery.data ?? []);
 
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
   const orderedScenes = useMemo(() => sortScenes(scenes), [scenes]);
+  const activeAlertsByChannelId = useMemo(
+    () => buildActiveAlertsByChannelId(activeAlerts),
+    [activeAlerts],
+  );
   const activeScene = useMemo(
     () => orderedScenes.find((scene) => scene.id === state.activeSceneId) ?? null,
     [orderedScenes, state.activeSceneId],
@@ -205,7 +258,7 @@ function AppContent(): JSX.Element {
     onStatusChange: setStatusText,
   });
 
-  const meterMap = useMeters({
+  const { meterMap, meterHistoryMap } = useMeters({
     initialSnapshot: latestMetersQuery.data,
     onOpen: () => {
       if (state.selectedChannelIds.size === 0 && healthQuery.data?.audio_engine_running) {
@@ -266,6 +319,53 @@ function AppContent(): JSX.Element {
 
     setStatusText(healthQuery.data.audio_engine_running ? 'Online' : 'Starting');
   }, [healthQuery.data, setStatusText, state.selectedChannelIds.size]);
+
+  const dismissToastAlert = useCallback((alertId: string): void => {
+    const timeoutId = toastTimeoutsRef.current.get(alertId);
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+      toastTimeoutsRef.current.delete(alertId);
+    }
+    setToastAlerts((currentAlerts) => currentAlerts.filter((alert) => alert.id !== alertId));
+  }, []);
+
+  useEffect(() => () => {
+    for (const timeoutId of toastTimeoutsRef.current.values()) {
+      window.clearTimeout(timeoutId);
+    }
+    toastTimeoutsRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    if (!settings?.alerts_enabled) {
+      setToastAlerts([]);
+      for (const timeoutId of toastTimeoutsRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      toastTimeoutsRef.current.clear();
+      return;
+    }
+
+    const popupDurationMs = Math.max(1, Number(settings.alert_popup_duration_sec || 6)) * 1000;
+    for (const alert of activeAlerts) {
+      if (seenAlertIdsRef.current.has(alert.id)) {
+        continue;
+      }
+
+      seenAlertIdsRef.current.add(alert.id);
+      setToastAlerts((currentAlerts) => {
+        if (currentAlerts.some((currentAlert) => currentAlert.id === alert.id)) {
+          return currentAlerts;
+        }
+        return [alert, ...currentAlerts].slice(0, 4);
+      });
+
+      const timeoutId = window.setTimeout(() => {
+        dismissToastAlert(alert.id);
+      }, popupDurationMs);
+      toastTimeoutsRef.current.set(alert.id, timeoutId);
+    }
+  }, [activeAlerts, dismissToastAlert, settings?.alert_popup_duration_sec, settings?.alerts_enabled]);
 
   useEffect(() => {
     document.body.classList.toggle('monitor-view-active', isMonitorLikeView);
@@ -512,18 +612,22 @@ function AppContent(): JSX.Element {
     await queryClient.invalidateQueries({ queryKey: ['channels'] });
   }, [queryClient]);
 
-  const handleSaveMasterGain = useCallback(async (gainDb: number): Promise<void> => {
-    const nextGainDb = clampGainDb(gainDb);
-    const updatedSettings = await patchSettings({ master_gain_db: nextGainDb });
-    if (state.selectedChannelIds.size > 0) {
+  const handleSaveSettings = useCallback(async (changes: SettingsUpdateRequest): Promise<void> => {
+    const updatedSettings = await patchSettings(changes);
+
+    if (settingsAffectListening(changes) && state.selectedChannelIds.size > 0) {
       await syncListening(orderedSelection(), state.modalScrubSeconds);
     }
+
+    if (settingsAffectAudioDeviceOptions(changes)) {
+      await queryClient.invalidateQueries({ queryKey: ['audioDevices'] });
+    }
+
     queryClient.setQueryData(['settings'], updatedSettings);
   }, [orderedSelection, patchSettings, queryClient, state.modalScrubSeconds, state.selectedChannelIds.size, syncListening]);
 
   const handleAddScene = useCallback(async (): Promise<void> => {
     const createdScene = await createScene({});
-    dispatch({ type: 'setSetupTab', payload: 'scenes' });
     dispatch({ type: 'setActiveView', payload: 'setup' });
     dispatch({ type: 'setActiveSceneId', payload: createdScene.id });
     queryClient.setQueryData<SceneResponse[]>(['scenes'], (current = []) => sortScenes([...current, createdScene]));
@@ -578,19 +682,44 @@ function AppContent(): JSX.Element {
     );
   }, [queryClient]);
 
-  const handleSaveExternalSyncSettings = useCallback(async (
-    payload: Pick<
-      SettingsUpdateRequest,
-      | 'external_sync_enabled'
-      | 'external_sync_transport'
-      | 'external_sync_osc_host'
-      | 'external_sync_osc_port'
-      | 'external_sync_midi_input_name'
-    >,
-  ): Promise<void> => {
-    await patchSettings(payload);
-    await queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
-  }, [patchSettings, queryClient]);
+  const handleResetAllChecklists = useCallback((): void => {
+    dispatch({ type: 'resetAllSceneChecklists' });
+    setStatusText('Scene checks reset');
+  }, [dispatch, setStatusText]);
+
+  const handleExportShowfile = useCallback(async (): Promise<void> => {
+    try {
+      await downloadShowfile();
+      setStatusText('Showfile exported');
+    } catch (error) {
+      console.error('Unable to export showfile', error);
+      setStatusText('Showfile export failed');
+    }
+  }, [setStatusText]);
+
+  const handleImportShowfile = useCallback(async (file: File): Promise<void> => {
+    try {
+      const payload = JSON.parse(await file.text()) as ShowfilePayload;
+      dispatch({ type: 'clearSelection' });
+      await syncListening([], 0);
+      await importShowfile(payload);
+
+      dispatch({ type: 'resetAllSceneChecklists' });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['settings'] }),
+        queryClient.invalidateQueries({ queryKey: ['channels'] }),
+        queryClient.invalidateQueries({ queryKey: ['scenes'] }),
+        queryClient.invalidateQueries({ queryKey: ['syncStatus'] }),
+        queryClient.invalidateQueries({ queryKey: ['audioDevices'] }),
+        queryClient.invalidateQueries({ queryKey: ['activeAlerts'] }),
+      ]);
+
+      setStatusText(`Imported ${file.name}`);
+    } catch (error) {
+      console.error('Unable to import showfile', error);
+      setStatusText('Showfile import failed');
+    }
+  }, [dispatch, queryClient, setStatusText, syncListening]);
 
   const transportStatusText = getTransportStatusText(
     state.modalChannelId,
@@ -609,8 +738,6 @@ function AppContent(): JSX.Element {
         activeSceneName={activeSceneName}
         showCheckedCount={sceneChecklistStats.checked}
         showTotalCount={sceneChecklistStats.total}
-        canGoToPreviousScene={activeSceneIndex > 0}
-        canGoToNextScene={activeSceneIndex !== -1 && activeSceneIndex < orderedScenes.length - 1}
         onSetActiveView={(view) => {
           void handleSetActiveView(view);
         }}
@@ -621,10 +748,9 @@ function AppContent(): JSX.Element {
         onStopListening={() => {
           void handleStopListening();
         }}
-        onNavigateScene={(offset) => {
-          void handleNavigateScene(offset);
-        }}
       />
+
+      <AlertToasts alerts={toastAlerts} onDismiss={dismissToastAlert} />
 
       <section
         id="monitor-view"
@@ -636,6 +762,8 @@ function AppContent(): JSX.Element {
             <ChannelGrid
               channels={channels}
               meterMap={meterMap}
+              meterHistoryMap={meterHistoryMap}
+              activeAlertsByChannelId={activeAlertsByChannelId}
               selectedChannelIds={state.selectedChannelIds}
               activeView={state.activeView}
               layoutMode={state.layoutMode}
@@ -658,10 +786,18 @@ function AppContent(): JSX.Element {
             activeScene={activeScene}
             nextScene={nextScene}
             checklist={sceneChecklist}
+            checkedCount={sceneChecklistStats.checked}
+            totalCount={sceneChecklistStats.total}
+            canGoToPreviousScene={activeSceneIndex > 0}
+            canGoToNextScene={activeSceneIndex !== -1 && activeSceneIndex < orderedScenes.length - 1}
             hidden={state.activeView !== 'show'}
+            onNavigateScene={(offset) => {
+              void handleNavigateScene(offset);
+            }}
             onToggleChecklist={(channelId) => {
               handleToggleChecklist(channelId);
             }}
+            onResetChecklist={handleResetAllChecklists}
           />
         </div>
 
@@ -684,24 +820,24 @@ function AppContent(): JSX.Element {
 
       <SetupView
         hidden={state.activeView !== 'setup'}
-        setupTab={state.setupTab}
         settings={settings}
         syncStatus={syncStatus}
         channels={channels}
         scenes={scenes}
+        audioDevices={audioDevices}
         activeSceneId={state.activeSceneId}
-        onSetSetupTab={(tab) => dispatch({ type: 'setSetupTab', payload: tab })}
+        onSaveSettings={handleSaveSettings}
         onAddChannel={handleAddChannel}
         onSaveChannel={handleSaveChannel}
         onRemoveChannel={handleRemoveChannel}
-        onSaveMasterGain={handleSaveMasterGain}
         onAddScene={handleAddScene}
         onSetActiveScene={handleSetActiveScene}
         onDeleteScene={handleDeleteScene}
         onSaveSceneName={handleSaveSceneName}
         onSaveSceneAssignments={handleSaveSceneAssignments}
         onSaveSceneCueMapping={handleSaveSceneCueMapping}
-        onSaveExternalSyncSettings={handleSaveExternalSyncSettings}
+        onExportShowfile={handleExportShowfile}
+        onImportShowfile={handleImportShowfile}
       />
 
       <audio id="monitor-audio" className="sr-audio" autoPlay playsInline ref={audioElementRef}></audio>

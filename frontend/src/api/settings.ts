@@ -1,5 +1,10 @@
 import { fetchJson } from './client';
-import type { HealthResponse, SettingsResponse, SettingsUpdateRequest } from '../types/api';
+import type {
+  AudioInputDeviceResponse,
+  HealthResponse,
+  SettingsResponse,
+  SettingsUpdateRequest,
+} from '../types/api';
 
 export function getHealth(): Promise<HealthResponse> {
   return fetchJson<HealthResponse>('/api/health');
@@ -14,4 +19,8 @@ export function updateSettings(payload: SettingsUpdateRequest): Promise<Settings
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+}
+
+export function listAudioInputDevices(): Promise<AudioInputDeviceResponse[]> {
+  return fetchJson<AudioInputDeviceResponse[]>('/api/audio/devices');
 }

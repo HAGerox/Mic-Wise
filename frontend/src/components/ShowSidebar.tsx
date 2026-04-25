@@ -22,8 +22,14 @@ interface ShowSidebarProps {
   activeScene: SceneResponse | null;
   nextScene: SceneResponse | null;
   checklist: Set<number>;
+  checkedCount: number;
+  totalCount: number;
+  canGoToPreviousScene: boolean;
+  canGoToNextScene: boolean;
   hidden: boolean;
+  onNavigateScene: (offset: number) => void;
   onToggleChecklist: (channelId: number) => void;
+  onResetChecklist: () => void;
 }
 
 export function ShowSidebar({
@@ -31,50 +37,106 @@ export function ShowSidebar({
   activeScene,
   nextScene,
   checklist,
+  checkedCount,
+  totalCount,
+  canGoToPreviousScene,
+  canGoToNextScene,
   hidden,
+  onNavigateScene,
   onToggleChecklist,
+  onResetChecklist,
 }: ShowSidebarProps): JSX.Element {
+  const sceneChannels = sortChannels(channels)
+    .map((channel) => {
+      const sceneState = getSceneAssignmentState(activeScene, channel.id);
+      if (sceneState === 'off') {
+        return null;
+      }
+
+      const visualState = getShowChannelVisualState(sceneState, checklist.has(channel.id));
+      return {
+        channel,
+        sceneState,
+        visualState,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
   return (
     <aside id="show-sidebar" className={`show-sidebar ${hidden ? 'is-hidden' : ''}`} aria-label="Show mode mic check">
-      <div className="show-sidebar-header">
+      <section className="show-scene-card">
         <div>
-          <h2>Mic check</h2>
+          <span className="show-sidebar-eyebrow">Show mode</span>
+          <h2>{activeScene ? activeScene.name : 'No active scene'}</h2>
           <p id="show-scene-summary" className="show-scene-summary">
-            {activeScene ? getSceneSummary(activeScene) : 'No active scene selected yet.'}
+            {activeScene ? getSceneSummary(activeScene) : 'Choose or create a scene in setup to start a mic check.'}
           </p>
         </div>
-        <p id="show-next-scene" className="show-next-scene">{nextScene ? `Next: ${nextScene.name}` : 'Next: —'}</p>
-      </div>
+        <div className="show-scene-progress">
+          <span>Checklist</span>
+          <strong>{checkedCount}/{totalCount}</strong>
+        </div>
+      </section>
 
-      <div className="show-legend" aria-label="Show mode colour legend">
-        <span className="show-legend-item is-checked">Green · checked</span>
-        <span className="show-legend-item is-pending">Red · pending</span>
-        <span className="show-legend-item is-off">Grey · not in scene</span>
-      </div>
+      <section className="show-navigator" aria-label="Scene navigation">
+        <button
+          type="button"
+          className="secondary icon-button"
+          aria-label="Previous scene"
+          disabled={!canGoToPreviousScene}
+          onClick={() => onNavigateScene(-1)}
+        >
+          ‹
+        </button>
+        <div className="show-navigator-copy">
+          <span className="show-sidebar-eyebrow">Up next</span>
+          <strong>{nextScene ? nextScene.name : 'End of show'}</strong>
+          <span>{nextScene ? getSceneSummary(nextScene) : 'No further scenes queued.'}</span>
+        </div>
+        <button
+          type="button"
+          className="show-next-button"
+          aria-label="Advance to next scene"
+          disabled={!canGoToNextScene}
+          onClick={() => onNavigateScene(1)}
+        >
+          Next scene
+        </button>
+      </section>
 
-      <p className="show-shortcuts">Press <strong>Y</strong> to check, <strong>N</strong> to undo, or hold a channel card to toggle it.</p>
+      <section className="show-sidebar-note">
+        <div className="show-legend" aria-label="Show mode colour legend">
+          <span className="show-legend-item is-checked">Green · checked</span>
+          <span className="show-legend-item is-pending">Red · pending</span>
+        </div>
+        <p className="show-shortcuts">Press <strong>Y</strong> to check, <strong>N</strong> to undo, or hold a grid card to toggle it.</p>
+        <button type="button" className="secondary show-reset-button" onClick={onResetChecklist}>Reset all checks</button>
+      </section>
 
-      <div id="show-list" className="show-list">
-        {sortChannels(channels).map((channel) => {
-          const sceneState = getSceneAssignmentState(activeScene, channel.id);
-          const visualState = getShowChannelVisualState(sceneState, checklist.has(channel.id));
-          return (
+      {sceneChannels.length === 0 ? (
+        <div className="show-empty-state">
+          <strong>No channels in this scene</strong>
+          <span>Assign channels in setup and they will appear here as a clean mic-check list.</span>
+        </div>
+      ) : (
+        <div id="show-list" className="show-list">
+          {sceneChannels.map(({ channel, sceneState, visualState }) => (
             <button
               key={channel.id}
               type="button"
               className={`show-list-item is-${visualState}`}
-              disabled={sceneState === 'off'}
               onClick={() => onToggleChecklist(channel.id)}
             >
               <span className="show-list-channel">CH {channel.number}</span>
-              <span className="show-list-name">{channel.name}</span>
-              <span className="show-list-state">
-                {sceneState === 'off' ? 'Not in scene' : visualState === 'checked' ? 'Checked' : 'Pending'}
+              <span className="show-list-name">
+                <strong>{channel.name}</strong>
+                <small>{sceneState === 'onstage' ? 'On stage now' : 'About to enter'}</small>
               </span>
+              <span className="show-list-state">{visualState === 'checked' ? 'Checked' : 'Pending'}</span>
             </button>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </aside>
   );
 }
