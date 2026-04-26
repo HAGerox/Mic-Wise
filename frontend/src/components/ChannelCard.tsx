@@ -1,6 +1,5 @@
 import { memo, useEffect, useRef } from 'react';
 
-import { getInputLabel, isDefaultChannelName } from '../lib/format';
 import type { ChannelCardState } from '../types/ui';
 
 const LONG_PRESS_MS = 420;
@@ -59,7 +58,6 @@ function ChannelCardComponent({
     }
   }, []);
 
-  const repeatedName = isDefaultChannelName(channel);
   const clampedRmsRatio = Math.min(Math.max(metrics.rmsRatio, 0), 1);
 
   const clearLongPress = (): void => {
@@ -115,18 +113,11 @@ function ChannelCardComponent({
       onPointerCancel={clearLongPress}
     >
       <header className="channel-card-header">
-        <div className="channel-card-index">
-          <span className="channel-number">CH {channel.number.toString().padStart(2, '0')}</span>
-          <span className={`channel-status-indicator is-${statusTone}`} aria-hidden="true"></span>
-        </div>
-        {!repeatedName ? (
-          <div className="channel-title-group">
-            <h2 className="channel-name">{channel.name}</h2>
-          </div>
-        ) : <span aria-hidden="true"></span>}
         <div className="channel-chip-stack">
-          <span className="channel-chip">{getInputLabel(channel)}</span>
           <span className={`channel-status-badge is-${statusTone}`}>{statusLabel}</span>
+        </div>
+        <div className="channel-title-group">
+          <h2 className="channel-name">{channel.name}</h2>
         </div>
       </header>
 

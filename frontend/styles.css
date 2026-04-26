@@ -731,53 +731,16 @@ body.monitor-view-active .monitor-dock {
 
 .channel-card-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   min-height: 26px;
-}
-
-.channel-card-index {
-  display: grid;
-  gap: 8px;
-  align-content: start;
-}
-
-.channel-number {
-  color: var(--text-dim);
-}
-
-.channel-status-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--text-dim);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-
-.channel-status-indicator.is-live {
-  background: var(--success);
-}
-
-.channel-status-indicator.is-armed {
-  background: var(--accent);
-}
-
-.channel-status-indicator.is-muted {
-  background: var(--text-dim);
-}
-
-.channel-status-indicator.is-warning {
-  background: var(--warning);
-}
-
-.channel-status-indicator.is-critical {
-  background: var(--danger);
 }
 
 .channel-title-group {
   min-width: 0;
   display: grid;
   gap: 3px;
+  align-self: center;
 }
 
 .channel-name {
@@ -807,6 +770,11 @@ body.monitor-view-active .monitor-dock {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.modal-badges {
   justify-content: flex-end;
 }
 
@@ -1216,6 +1184,11 @@ body.monitor-view-active .monitor-dock {
 
 .modal-kicker {
   color: var(--accent);
+  font-size: 12px;
+  font-weight: 560;
+  letter-spacing: 0.05em;
+  margin-right: 8px;
+  text-transform: uppercase;
 }
 
 .modal-kicker:empty {
@@ -1311,20 +1284,22 @@ body.monitor-view-active .monitor-dock {
 
 .waveform-scale {
   position: relative;
-  height: 24px;
+  height: 28px;
   color: var(--text-dim);
 }
 
 .waveform-scale-mark {
   position: absolute;
-  bottom: 0;
-  transform: translateX(-50%);
-  display: grid;
-  justify-items: center;
-  gap: 2px;
+  top: 0;
+  width: 0;
+  height: 100%;
 }
 
 .waveform-scale-tick {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(-50%);
   width: 1px;
   height: 7px;
   background: rgba(255, 255, 255, 0.18);
@@ -1341,7 +1316,25 @@ body.monitor-view-active .monitor-dock {
 }
 
 .waveform-scale-label {
+  position: absolute;
+  top: 13px;
+  left: 0;
+  transform: translateX(-50%);
   white-space: nowrap;
+}
+
+.waveform-scale-mark.is-edge-start .waveform-scale-label {
+  left: 12px;
+  transform: translateX(-50%);
+}
+
+.waveform-scale-mark.is-edge-end .waveform-scale-label {
+  left: -12px;
+  transform: translateX(-50%);
+}
+
+.waveform-scale-label-text {
+  display: block;
 }
 
 .waveform-footer {

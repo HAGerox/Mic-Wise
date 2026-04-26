@@ -1,4 +1,5 @@
 import { formatGainDb, formatPlaybackOffset, getInputLabel, isDefaultChannelName } from '../lib/format';
+import { MODAL_WAVEFORM_WINDOW_SECONDS } from '../hooks/useWaveform';
 import { buildWaveformRulerMarks } from '../lib/ui-logic';
 import { WaveformCanvas } from './WaveformCanvas';
 import type { ChannelResponse, ChannelWaveformResponse } from '../types/api';
@@ -40,7 +41,9 @@ export function ChannelModal({
 
   const repeatedName = isDefaultChannelName(channel);
   const modalScrubLabel = modalScrubSeconds > 0 ? `Replay ${formatPlaybackOffset(modalScrubSeconds)}` : 'Live';
-  const rulerMarks = buildWaveformRulerMarks(300, 60, 15, 30);
+  const historyMinutes = Math.round(MODAL_WAVEFORM_WINDOW_SECONDS / 60);
+  const historyLabel = `${historyMinutes} min rolling peak history`;
+  const rulerMarks = buildWaveformRulerMarks(MODAL_WAVEFORM_WINDOW_SECONDS, 60, 15, 30);
   const channelIdentity = `CH ${channel.number.toString().padStart(2, '0')}`;
 
   return (
@@ -60,8 +63,16 @@ export function ChannelModal({
         <button id="close-modal" className="icon-button inspector-close-button" type="button" aria-label="Close channel details" onClick={onClose}>×</button>
         <header className="modal-header">
           <div className="modal-header-copy">
-            <p id="modal-channel-number" className="modal-kicker">{repeatedName ? '' : channelIdentity}</p>
-            <h2 id="modal-channel-name">{repeatedName ? channelIdentity : channel.name}</h2>
+            <h2 id="modal-channel-name">
+              {repeatedName ? (
+                channelIdentity
+              ) : (
+                <>
+                  <span id="modal-channel-number" className="modal-kicker">{channelIdentity}</span>
+                  {channel.name}
+                </>
+              )}
+            </h2>
             <p id="modal-channel-meta" className="modal-meta">
               {channel.is_record_enabled ? 'Rolling capture armed' : 'Rolling capture off'}
             </p>
@@ -79,7 +90,7 @@ export function ChannelModal({
               <div>
                 <strong id="modal-scrub-label">{modalScrubLabel}</strong>
               </div>
-              <span className="waveform-meta-note">300 s rolling peak history</span>
+              <span className="waveform-meta-note">{historyLabel}</span>
             </div>
 
             <WaveformCanvas
@@ -90,16 +101,28 @@ export function ChannelModal({
             />
 
             <div className="waveform-scale" aria-hidden="true">
-              {rulerMarks.map((mark) => (
-                <span
-                  key={`${mark.kind}-${mark.position}`}
-                  className={`waveform-scale-mark is-${mark.kind}`}
-                  style={{ left: `${mark.position * 100}%` }}
-                >
-                  <span className="waveform-scale-tick"></span>
-                  {mark.label ? <span className="waveform-scale-label">{mark.label}</span> : null}
-                </span>
-              ))}
+              {rulerMarks.map((mark, index) => {
+                const edgeClassName = index === 0
+                  ? ' is-edge-start'
+                  : index === rulerMarks.length - 1
+                    ? ' is-edge-end'
+                    : '';
+
+                return (
+                  <span
+                    key={`${mark.kind}-${mark.position}`}
+                    className={`waveform-scale-mark is-${mark.kind}${edgeClassName}`}
+                    style={{ left: `${mark.position * 100}%` }}
+                  >
+                    <span className="waveform-scale-tick"></span>
+                    {mark.label ? (
+                      <span className="waveform-scale-label">
+                        <span className="waveform-scale-label-text">{mark.label}</span>
+                      </span>
+                    ) : null}
+                  </span>
+                );
+              })}
             </div>
           </div>
         </div>
