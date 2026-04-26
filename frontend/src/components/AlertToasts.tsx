@@ -15,11 +15,11 @@ export function AlertToasts({ alerts, onDismiss }: AlertToastsProps): JSX.Elemen
       {alerts.map((alert) => (
         <article key={alert.id} className={`alert-toast is-${alert.severity}`}>
           <div className="alert-toast-copy">
-            <span className="alert-toast-kicker">{alert.kind.toUpperCase()}</span>
+            <span className="alert-toast-kicker">{alert.severity === 'critical' ? 'Critical alert' : 'Warning alert'}</span>
             <strong>{alert.title}</strong>
             <p>
               {alert.channel_numbers.length > 0
-                ? `CH ${alert.channel_numbers.join(', ')} · ${alert.message}`
+                ? `CH ${alert.channel_numbers.join(', ')} · ${alert.kind} · ${alert.message}`
                 : alert.message}
             </p>
           </div>

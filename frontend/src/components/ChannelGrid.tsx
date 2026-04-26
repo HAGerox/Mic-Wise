@@ -3,10 +3,10 @@ import { useEffect, useMemo, useRef } from 'react';
 import Sortable from 'sortablejs';
 
 import { ChannelCard } from './ChannelCard';
-import { dbToLinearGain, sortChannels } from '../lib/format';
+import { dbToLinearGain, meterRatioFromLinear, linearToDbfs, sortChannels } from '../lib/format';
 import { getShowChannelVisualState } from '../lib/ui-logic';
 import type { AudioAlertResponse, ChannelResponse, MeterChannelSnapshot, SceneResponse } from '../types/api';
-import type { ActiveView, ShowChannelVisualState } from '../types/ui';
+import type { ActiveView, ChannelCardState, ChannelStatusTone, ShowChannelVisualState } from '../types/ui';
 
 function getSceneAssignmentState(scene: SceneResponse | null, channelId: number): string {
   if (!scene) {
@@ -27,6 +27,26 @@ function getVisualState(
   }
 
   return getShowChannelVisualState(getSceneAssignmentState(activeScene, channelId), checklist.has(channelId));
+}
+
+function getStatusTone(
+  visualState: ShowChannelVisualState | null,
+  isSelected: boolean,
+  activeAlert: AudioAlertResponse | null,
+): ChannelStatusTone {
+  if (activeAlert?.severity === 'critical') {
+    return 'critical';
+  }
+  if (activeAlert?.severity === 'warning') {
+    return 'warning';
+  }
+  if (visualState === 'off') {
+    return 'muted';
+  }
+  if (isSelected) {
+    return 'armed';
+  }
+  return 'live';
 }
 
 interface ChannelGridProps {
@@ -66,6 +86,53 @@ export function ChannelGrid({
   const sortableRef = useRef<Sortable | null>(null);
 
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
+  const cardStates = useMemo<ChannelCardState[]>(() => {
+    return orderedChannels.map((channel) => {
+      const meter = channel.input_index === null || channel.input_index === undefined
+        ? null
+        : meterMap.get(channel.input_index + 1) ?? null;
+      const meterHistory = channel.input_index === null || channel.input_index === undefined
+        ? []
+        : meterHistoryMap.get(channel.input_index + 1) ?? [];
+      const combinedGainLinear = dbToLinearGain((channel.gain_db ?? 0) + masterGainDb);
+      const rmsLinear = meter ? Math.max(0, meter.rms * combinedGainLinear) : 0;
+      const peakLinear = meter ? Math.max(rmsLinear, meter.peak * combinedGainLinear) : 0;
+      const historyRatios = meterHistory.map((value) => meterRatioFromLinear(value * combinedGainLinear));
+      const visualState = getVisualState(activeView, activeScene, checklist, channel.id);
+      const activeAlert = activeAlertsByChannelId.get(channel.id) ?? null;
+      const isSelected = selectedChannelIds.has(channel.id);
+
+      return {
+        channel,
+        metrics: {
+          rmsLinear,
+          peakLinear,
+          rmsDbfs: linearToDbfs(rmsLinear),
+          peakDbfs: linearToDbfs(peakLinear),
+          rmsRatio: meterRatioFromLinear(rmsLinear),
+          peakRatio: meterRatioFromLinear(peakLinear),
+          historyRatios,
+        },
+        activeAlert,
+        isSelected,
+        isLayoutMode: layoutMode,
+        isShowMode: activeView === 'show',
+        visualState,
+        statusTone: getStatusTone(visualState, isSelected, activeAlert),
+      };
+    });
+  }, [
+    activeAlertsByChannelId,
+    activeScene,
+    activeView,
+    checklist,
+    layoutMode,
+    masterGainDb,
+    meterHistoryMap,
+    meterMap,
+    orderedChannels,
+    selectedChannelIds,
+  ]);
 
   useEffect(() => {
     const gridElement = gridRef.current;
@@ -118,34 +185,14 @@ export function ChannelGrid({
 
   return (
     <div id="channel-grid" className="channel-grid" ref={gridRef}>
-      {orderedChannels.map((channel) => {
-        const meter = channel.input_index === null || channel.input_index === undefined
-          ? null
-          : meterMap.get(channel.input_index + 1) ?? null;
-        const meterHistory = channel.input_index === null || channel.input_index === undefined
-          ? []
-          : meterHistoryMap.get(channel.input_index + 1) ?? [];
-        const combinedGainLinear = dbToLinearGain((channel.gain_db ?? 0) + masterGainDb);
-        const level = meter ? Math.min(meter.rms * combinedGainLinear * 100, 100) : 0;
-        const rmsHistory = meterHistory.map((value) => Math.min(value * combinedGainLinear, 1));
-        const visualState = getVisualState(activeView, activeScene, checklist, channel.id);
-
-        return (
-          <ChannelCard
-            key={channel.id}
-            channel={channel}
-            level={level}
-            rmsHistory={rmsHistory}
-            activeAlert={activeAlertsByChannelId.get(channel.id) ?? null}
-            isSelected={selectedChannelIds.has(channel.id)}
-            isLayoutMode={layoutMode}
-            isShowMode={activeView === 'show'}
-            visualState={visualState}
-            onInteract={onInteractChannel}
-            onToggleChecklist={onToggleChecklist}
-          />
-        );
-      })}
+      {cardStates.map((cardState) => (
+        <ChannelCard
+          key={cardState.channel.id}
+          state={cardState}
+          onInteract={onInteractChannel}
+          onToggleChecklist={onToggleChecklist}
+        />
+      ))}
     </div>
   );
 }

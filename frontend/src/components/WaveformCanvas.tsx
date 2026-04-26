@@ -24,13 +24,13 @@ function resizeCanvas(canvas: HTMLCanvasElement): {
 
 function drawGrid(context: CanvasRenderingContext2D, width: number, height: number): void {
   context.clearRect(0, 0, width, height);
-  context.fillStyle = '#020617';
+  context.fillStyle = '#0a0b0d';
   context.fillRect(0, 0, width, height);
 
-  context.strokeStyle = 'rgba(148, 163, 184, 0.15)';
+  context.strokeStyle = 'rgba(255, 255, 255, 0.08)';
   context.lineWidth = 1;
-  for (let line = 1; line < 4; line += 1) {
-    const y = (height / 4) * line;
+  for (let line = 1; line < 5; line += 1) {
+    const y = (height / 5) * line;
     context.beginPath();
     context.moveTo(0, y);
     context.lineTo(width, y);
@@ -42,12 +42,18 @@ function drawGrid(context: CanvasRenderingContext2D, width: number, height: numb
     const x = width * mark.position;
     context.beginPath();
     context.setLineDash(mark.kind === 'major' || mark.kind === 'live' ? [1, 0] : [3, 4]);
-    context.strokeStyle = mark.kind === 'live' ? 'rgba(248, 250, 252, 0.22)' : 'rgba(148, 163, 184, 0.1)';
+    context.strokeStyle = mark.kind === 'live' ? 'rgba(113, 112, 255, 0.44)' : 'rgba(255, 255, 255, 0.08)';
     context.moveTo(x, 0);
     context.lineTo(x, height);
     context.stroke();
   }
   context.setLineDash([]);
+
+  context.beginPath();
+  context.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+  context.moveTo(0, height - 1.5);
+  context.lineTo(width, height - 1.5);
+  context.stroke();
 }
 
 interface WaveformCanvasProps {
@@ -82,10 +88,10 @@ export function WaveformCanvas({
     const availableSeconds = Math.min(waveform.seconds, MODAL_WAVEFORM_WINDOW_SECONDS);
     const occupiedWidth = width * (availableSeconds / MODAL_WAVEFORM_WINDOW_SECONDS);
     const startX = width - occupiedWidth;
-    const baseline = height - 12;
+    const baseline = height - 14;
 
     if (values.length > 0 && occupiedWidth > 0) {
-      const chartTop = 8;
+      const chartTop = 10;
       const chartHeight = baseline - chartTop;
 
       context.beginPath();
@@ -98,7 +104,7 @@ export function WaveformCanvas({
       }
       context.lineTo(startX + occupiedWidth, baseline);
       context.closePath();
-      context.fillStyle = 'rgba(56, 189, 248, 0.16)';
+      context.fillStyle = 'rgba(113, 112, 255, 0.12)';
       context.fill();
 
       context.beginPath();
@@ -112,9 +118,26 @@ export function WaveformCanvas({
           context.lineTo(x, y);
         }
       }
-      context.strokeStyle = 'rgba(56, 189, 248, 0.95)';
-      context.lineWidth = 2;
+      context.strokeStyle = 'rgba(247, 248, 248, 0.94)';
+      context.lineWidth = 1.5;
       context.stroke();
+
+      context.beginPath();
+      for (let index = 0; index < values.length; index += 1) {
+        const value = values[index];
+        const x = startX + ((occupiedWidth * index) / Math.max(values.length - 1, 1));
+        const y = baseline - Math.max(1, value * chartHeight);
+        if (index === 0) {
+          context.moveTo(x, y);
+        } else {
+          context.lineTo(x, y);
+        }
+      }
+      context.strokeStyle = 'rgba(113, 112, 255, 0.55)';
+      context.lineWidth = 3;
+      context.globalCompositeOperation = 'screen';
+      context.stroke();
+      context.globalCompositeOperation = 'source-over';
     }
 
     if (scrubSeconds > 0) {
@@ -125,6 +148,9 @@ export function WaveformCanvas({
       context.moveTo(markerX, 0);
       context.lineTo(markerX, height);
       context.stroke();
+
+      context.fillStyle = '#f97316';
+      context.fillRect(markerX - 3, 8, 6, 6);
     }
   }, [displayPoints, scrubSeconds, waveform]);
 

@@ -1,8 +1,7 @@
 import { memo, useEffect, useRef } from 'react';
 
 import { getInputLabel, isDefaultChannelName } from '../lib/format';
-import type { AudioAlertResponse, ChannelResponse } from '../types/api';
-import type { ShowChannelVisualState } from '../types/ui';
+import type { ChannelCardState } from '../types/ui';
 
 const LONG_PRESS_MS = 420;
 
@@ -17,44 +16,40 @@ function buildSparklinePoints(history: number[]): string {
     .join(' ');
 }
 
-function getBadgeMarkup(visualState: ShowChannelVisualState | null): JSX.Element | null {
+function getBadgeMarkup(visualState: ChannelCardState['visualState']): JSX.Element | null {
   if (!visualState) {
     return null;
   }
   if (visualState === 'off') {
-    return <span className="tag tag--scene-muted">Out</span>;
+    return <span className="tag tag--scene-muted">Muted</span>;
   }
   if (visualState === 'checked') {
     return <span className="tag tag--scene-checked">Checked</span>;
   }
-  return <span className="tag tag--scene-pending">Pending</span>;
+  return <span className="tag tag--scene-pending">Ready</span>;
 }
 
 interface ChannelCardProps {
-  channel: ChannelResponse;
-  level: number;
-  rmsHistory: number[];
-  activeAlert: AudioAlertResponse | null;
-  isSelected: boolean;
-  isLayoutMode: boolean;
-  isShowMode: boolean;
-  visualState: ShowChannelVisualState | null;
+  state: ChannelCardState;
   onInteract: (channelId: number) => void;
   onToggleChecklist: (channelId: number) => void;
 }
 
 function ChannelCardComponent({
-  channel,
-  level,
-  rmsHistory,
-  activeAlert,
-  isSelected,
-  isLayoutMode,
-  isShowMode,
-  visualState,
+  state,
   onInteract,
   onToggleChecklist,
 }: ChannelCardProps): JSX.Element {
+  const {
+    channel,
+    metrics,
+    activeAlert,
+    isSelected,
+    isLayoutMode,
+    isShowMode,
+    visualState,
+    statusTone,
+  } = state;
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
 
@@ -73,6 +68,16 @@ function ChannelCardComponent({
     }
   };
 
+  const statusLabel = activeAlert
+    ? activeAlert.severity === 'critical'
+      ? 'Critical'
+      : 'Warning'
+    : visualState === 'off'
+      ? 'Muted'
+      : isSelected
+        ? 'Armed'
+        : 'Live';
+
   return (
     <article
       className={[
@@ -83,6 +88,7 @@ function ChannelCardComponent({
         visualState === 'off' ? 'is-show-off' : '',
         visualState === 'pending' ? 'is-show-pending' : '',
         visualState === 'checked' ? 'is-show-checked' : '',
+        `is-status-${statusTone}`,
       ].filter(Boolean).join(' ')}
       data-channel-id={String(channel.id)}
       onClick={() => {
@@ -107,33 +113,53 @@ function ChannelCardComponent({
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
     >
-      <header>
-        <div className="channel-title-group">
-          {repeatedName ? (
-            <h2 className="channel-name">CH {channel.number}</h2>
-          ) : (
-            <>
-              <div className="channel-number">CH {channel.number}</div>
-              <h2 className="channel-name">{channel.name}</h2>
-            </>
-          )}
+      <header className="channel-card-header">
+        <div className="channel-card-index">
+          <span className="channel-number">CH {channel.number.toString().padStart(2, '0')}</span>
+          <span className={`channel-status-indicator is-${statusTone}`} aria-hidden="true"></span>
         </div>
-        <span className="channel-chip">{getInputLabel(channel)}</span>
+        {!repeatedName ? (
+          <div className="channel-title-group">
+            <h2 className="channel-name">{channel.name}</h2>
+          </div>
+        ) : <span aria-hidden="true"></span>}
+        <div className="channel-chip-stack">
+          <span className="channel-chip">{getInputLabel(channel)}</span>
+          <span className={`channel-status-badge is-${statusTone}`}>{statusLabel}</span>
+        </div>
       </header>
-      <div className="channel-sparkline-shell" aria-hidden="true">
-        <svg className="channel-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none">
-          <polyline points={buildSparklinePoints(rmsHistory)} />
-        </svg>
-      </div>
-      <div className="meter"><div className="meter-mask" style={{ width: `${Math.max(0, 100 - level)}%` }}></div></div>
-      <div className="channel-meta-row">
-        <div className="channel-meta-copy">
-          <span className="channel-actions">{isLayoutMode ? 'Hold and move' : 'Tap to listen'}</span>
-          {activeAlert ? (
-            <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
-          ) : null}
+
+      <div className="channel-meter-row" aria-label="Live signal level">
+        <div className="meter meter--vertical-shell">
+          <div className="meter meter--vertical">
+            <div className="meter-fill" style={{ height: `${metrics.rmsRatio * 100}%` }}></div>
+            <div className="meter-peak-line" style={{ bottom: `${metrics.peakRatio * 100}%` }}></div>
+          </div>
+          <div className="meter-scale" aria-hidden="true">
+            <span>0</span>
+            <span>-20</span>
+            <span>-40</span>
+            <span>-60</span>
+          </div>
         </div>
-        {getBadgeMarkup(visualState)}
+
+        <div className="channel-signal-stack">
+          <div className="channel-sparkline-shell" aria-hidden="true">
+            <svg className="channel-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none">
+              <polyline points={buildSparklinePoints(metrics.historyRatios)} />
+            </svg>
+          </div>
+
+          <div className="channel-meta-row">
+            <div className="channel-meta-copy">
+              {isLayoutMode ? <span className="channel-actions">Drag</span> : null}
+              {activeAlert ? (
+                <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
+              ) : null}
+            </div>
+            {getBadgeMarkup(visualState)}
+          </div>
+        </div>
       </div>
     </article>
   );

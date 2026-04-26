@@ -233,6 +233,14 @@ export function SetupView({
     () => getSelectedDeviceDetails(audioDevices, settings?.audio_input_device),
     [audioDevices, settings?.audio_input_device],
   );
+  const patchedChannelCount = useMemo(
+    () => orderedChannels.filter((channel) => channel.input_index !== null && channel.input_index !== undefined).length,
+    [orderedChannels],
+  );
+  const recordArmedCount = useMemo(
+    () => orderedChannels.filter((channel) => channel.is_record_enabled).length,
+    [orderedChannels],
+  );
 
   const [masterGainValue, setMasterGainValue] = useState('0');
   const [runtimeForm, setRuntimeForm] = useState({
@@ -304,11 +312,11 @@ export function SetupView({
     );
   }, [activeScene]);
 
-  const setupSections: Array<{ id: SetupTab; label: string; description: string }> = [
-    { id: 'general', label: 'General', description: 'Audio engine and core show defaults.' },
-    { id: 'channels', label: 'Channels', description: 'Patch, trim, and name microphones.' },
-    { id: 'scenes', label: 'Scenes', description: 'Build scene checklists and cue mapping.' },
-    { id: 'automation', label: 'Automation', description: 'External sync plus alerts.' },
+  const setupSections: Array<{ id: SetupTab; label: string; icon: string }> = [
+    { id: 'general', label: 'General', icon: 'GEN' },
+    { id: 'channels', label: 'Channels', icon: 'CH' },
+    { id: 'scenes', label: 'Scenes', icon: 'SCN' },
+    { id: 'automation', label: 'Automation', icon: 'AUTO' },
   ];
 
   return (
@@ -318,12 +326,11 @@ export function SetupView({
           <div className="setup-sidebar-header">
             <div>
               <span className="setup-eyebrow">Setup</span>
-              <h2>Show configuration</h2>
-              <p>Keep programming compact and easy to scan.</p>
+              <h2>Show engineering</h2>
             </div>
             <div className="panel-heading-actions">
-              <button type="button" className="secondary" onClick={() => void onExportShowfile()}>Export</button>
-              <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
+              <button type="button" className="secondary" onClick={() => void onExportShowfile()}>Export showfile</button>
+              <button type="button" onClick={() => importInputRef.current?.click()}>Import showfile</button>
               <input
                 ref={importInputRef}
                 className="is-hidden"
@@ -349,21 +356,33 @@ export function SetupView({
                 className={`setup-nav-item ${setupTab === section.id ? 'is-active' : ''}`}
                 onClick={() => onSetSetupTab(section.id)}
               >
+                <span className="setup-nav-icon" aria-hidden="true">{section.icon}</span>
                 <strong>{section.label}</strong>
-                <span>{section.description}</span>
               </button>
             ))}
           </nav>
 
           <div className="setup-sidebar-summary">
-            <div className="setup-stat-grid">
-              <div className="setup-stat-card">
-                <span>Display channels</span>
+            <div className="setup-summary-list" aria-label="Showfile snapshot">
+              <div className="setup-summary-row">
+                <span>Channels</span>
                 <strong>{orderedChannels.length}</strong>
               </div>
-              <div className="setup-stat-card">
+              <div className="setup-summary-row">
+                <span>Patched inputs</span>
+                <strong>{patchedChannelCount}</strong>
+              </div>
+              <div className="setup-summary-row">
+                <span>Record armed</span>
+                <strong>{recordArmedCount}</strong>
+              </div>
+              <div className="setup-summary-row">
                 <span>Scenes</span>
                 <strong>{orderedScenes.length}</strong>
+              </div>
+              <div className="setup-summary-row">
+                <span>Sync</span>
+                <strong>{buildExternalSyncStatusText(syncStatus)}</strong>
               </div>
             </div>
           </div>
@@ -374,8 +393,7 @@ export function SetupView({
             <div className="setup-overview-grid">
               <section className="panel-card setup-summary-card">
           <div>
-            <h3>Mix & show defaults</h3>
-            <p>Keep the top-level show settings easy to find and easy to tweak.</p>
+            <h3>Console defaults</h3>
           </div>
 
           <label className="field-group" htmlFor="master-gain-input">
@@ -403,12 +421,12 @@ export function SetupView({
 
           <div className="setup-stat-grid">
             <div className="setup-stat-card">
-              <span>Display channels</span>
-              <strong>{orderedChannels.length}</strong>
+              <span>Patched inputs</span>
+              <strong>{patchedChannelCount}</strong>
             </div>
             <div className="setup-stat-card">
-              <span>Scenes</span>
-              <strong>{orderedScenes.length}</strong>
+              <span>Record armed</span>
+              <strong>{recordArmedCount}</strong>
             </div>
           </div>
               </section>
@@ -416,7 +434,6 @@ export function SetupView({
               <section className="panel-card setup-summary-card">
           <div>
             <h3>Audio engine</h3>
-            <p>Switch between synthetic development audio and a real capture device without leaving the browser.</p>
           </div>
 
           <div className="scene-sync-settings-grid">
@@ -537,7 +554,7 @@ export function SetupView({
           <p className="setup-helper-text">
             {selectedDevice
               ? `${selectedDevice.max_input_channels} inputs available on ${selectedDevice.hostapi_name} · default ${selectedDevice.default_sample_rate} Hz`
-              : 'Use Auto to follow the system default input, or pick a specific CoreAudio / ASIO / ALSA-style device.'}
+              : 'Use Auto to follow the system default interface, or lock Mic-Wise to a specific capture device.'}
           </p>
               </section>
             </div>
@@ -546,11 +563,10 @@ export function SetupView({
           <section id="setup-program-panel" className={`setup-panel panel-card ${setupTab === 'channels' ? '' : 'is-hidden'}`}>
         <div className="panel-heading panel-heading--nested">
           <div>
-            <h3>Channel programming</h3>
-            <p>Patch inputs, rename channels, and manage trim and rolling record from one place.</p>
+            <h3>Channel patch sheet</h3>
           </div>
           <div className="panel-heading-actions">
-            <button id="add-channel" type="button" onClick={() => void onAddChannel()}>Add channel</button>
+            <button id="add-channel" type="button" onClick={() => void onAddChannel()}>Add RF path</button>
           </div>
         </div>
 
@@ -584,8 +600,7 @@ export function SetupView({
           <section id="setup-scenes-panel" className={`setup-panel panel-card ${setupTab === 'scenes' ? '' : 'is-hidden'}`}>
         <div className="panel-heading panel-heading--nested">
           <div>
-            <h3>Scene programming</h3>
-            <p>Choose who is on stage, who is about to enter, and optionally map scenes to external cues.</p>
+            <h3>Scene map</h3>
           </div>
           <div className="panel-heading-actions">
             <button id="add-scene" type="button" onClick={() => void onAddScene()}>Add scene</button>
@@ -596,8 +611,7 @@ export function SetupView({
           <aside className="scene-list-panel">
             <div className="panel-heading panel-heading--compact">
               <div>
-                <h3>Scenes</h3>
-                <p>Pick a scene to edit its checklist assignments and cue mapping.</p>
+                <h3>Cue list</h3>
               </div>
             </div>
             <div id="scene-list" className="scene-list">
@@ -618,7 +632,7 @@ export function SetupView({
           <section className="scene-editor-panel">
             <div id="scene-empty-state" className={`scene-empty-state ${activeScene ? 'is-hidden' : ''}`}>
               <strong>No scene selected</strong>
-              <span>Add a scene to start programming who is on stage and who is about to enter.</span>
+              <span>Add a scene to define live channels, standby channels, and cue sync.</span>
             </div>
 
             <div id="scene-detail" className={`scene-detail ${activeScene ? '' : 'is-hidden'}`}>
@@ -659,7 +673,6 @@ export function SetupView({
               <section className="scene-sync-card">
                 <div>
                   <h3>Scene cue mapping</h3>
-                  <p>Optional exact-match cues for external sync.</p>
                 </div>
                 <div className="scene-sync-grid">
                   <label className="field-group" htmlFor="scene-sync-osc-address">
@@ -786,7 +799,6 @@ export function SetupView({
               <section className="scene-sync-settings-panel panel-card">
           <div>
             <h3>External scene sync</h3>
-            <p>Optional QLab / desk integration. It stays off until you enable it and map cues to scenes.</p>
           </div>
 
           <div className="scene-sync-settings-grid">
@@ -914,8 +926,7 @@ export function SetupView({
 
               <section className="scene-sync-settings-panel panel-card">
           <div>
-            <h3>Alerts & RadioWorld</h3>
-            <p>Detect pops, wind rumble, and feedback risk locally, show browser popups, and optionally mirror alerts into RadioWorld.</p>
+            <h3>Alerts and RadioWorld</h3>
           </div>
 
           <div className="scene-sync-settings-grid">
@@ -1018,7 +1029,6 @@ export function SetupView({
             </label>
           </div>
 
-          <p className="setup-helper-text">RadioWorld alerts broadcast over UDP on the local network using the Orbital-style chatbox protocol you supplied.</p>
               </section>
             </div>
           </section>

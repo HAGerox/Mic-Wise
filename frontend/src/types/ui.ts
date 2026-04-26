@@ -1,4 +1,5 @@
 import type {
+  AudioAlertResponse,
   ChannelResponse,
   SceneResponse,
   SceneSyncStatusResponse,
@@ -31,4 +32,27 @@ export interface ExternalSyncFormState {
   external_sync_osc_host: string;
   external_sync_osc_port: number;
   external_sync_midi_input_name: string;
+}
+
+export interface ChannelVisualMetrics {
+  rmsLinear: number;
+  peakLinear: number;
+  rmsDbfs: number;
+  peakDbfs: number;
+  rmsRatio: number;
+  peakRatio: number;
+  historyRatios: number[];
+}
+
+export type ChannelStatusTone = 'live' | 'armed' | 'muted' | 'warning' | 'critical';
+
+export interface ChannelCardState {
+  channel: ChannelResponse;
+  metrics: ChannelVisualMetrics;
+  activeAlert: AudioAlertResponse | null;
+  isSelected: boolean;
+  isLayoutMode: boolean;
+  isShowMode: boolean;
+  visualState: ShowChannelVisualState | null;
+  statusTone: ChannelStatusTone;
 }

@@ -65,7 +65,7 @@ export function ShowSidebar({
   return (
     <aside id="show-sidebar" className={`show-sidebar ${hidden ? 'is-hidden' : ''}`} aria-label="Show mode mic check">
       <section className="show-scene-card">
-        <div>
+        <div className="show-scene-copy">
           <span className="show-sidebar-eyebrow">Show mode</span>
           <h2>{activeScene ? activeScene.name : 'No active scene'}</h2>
           <p id="show-scene-summary" className="show-scene-summary">
@@ -75,6 +75,7 @@ export function ShowSidebar({
         <div className="show-scene-progress">
           <span>Checklist</span>
           <strong>{checkedCount}/{totalCount}</strong>
+          <small>{Math.max(totalCount - checkedCount, 0)} remaining</small>
         </div>
       </section>
 
@@ -89,7 +90,7 @@ export function ShowSidebar({
           ‹
         </button>
         <div className="show-navigator-copy">
-          <span className="show-sidebar-eyebrow">Up next</span>
+          <span className="show-sidebar-eyebrow">Next cue</span>
           <strong>{nextScene ? nextScene.name : 'End of show'}</strong>
           <span>{nextScene ? getSceneSummary(nextScene) : 'No further scenes queued.'}</span>
         </div>
@@ -106,10 +107,11 @@ export function ShowSidebar({
 
       <section className="show-sidebar-note">
         <div className="show-legend" aria-label="Show mode colour legend">
-          <span className="show-legend-item is-checked">Green · checked</span>
-          <span className="show-legend-item is-pending">Red · pending</span>
+          <span className="show-legend-item is-checked">Checked</span>
+          <span className="show-legend-item is-pending">Ready</span>
+          <span className="show-legend-item is-off">Muted</span>
         </div>
-        <p className="show-shortcuts">Press <strong>Y</strong> to check, <strong>N</strong> to undo, or hold a grid card to toggle it.</p>
+        <p className="show-shortcuts">Press <strong>Y</strong> to mark checked, <strong>N</strong> to reopen, or hold a strip to toggle it.</p>
         <button type="button" className="secondary show-reset-button" onClick={onResetChecklist}>Reset all checks</button>
       </section>
 
@@ -130,9 +132,9 @@ export function ShowSidebar({
               <span className="show-list-channel">CH {channel.number}</span>
               <span className="show-list-name">
                 <strong>{channel.name}</strong>
-                <small>{sceneState === 'onstage' ? 'On stage now' : 'About to enter'}</small>
+                <small>{sceneState === 'onstage' ? 'Live in current scene' : 'About to enter'}</small>
               </span>
-              <span className="show-list-state">{visualState === 'checked' ? 'Checked' : 'Pending'}</span>
+              <span className="show-list-state">{visualState === 'checked' ? 'Checked' : 'Ready'}</span>
             </button>
           ))}
         </div>
