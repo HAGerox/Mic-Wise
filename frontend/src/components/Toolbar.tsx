@@ -7,12 +7,16 @@ interface ToolbarProps {
   selectedCount: number;
   statusText: string;
   activeSceneName: string;
+  nextSceneName: string | null;
   showCheckedCount: number;
   showTotalCount: number;
+  canGoToPreviousScene: boolean;
+  canGoToNextScene: boolean;
   onSetActiveView: (view: ActiveView) => void;
   onToggleListenMode: () => void;
   onToggleLayoutMode: () => void;
   onStopListening: () => void;
+  onNavigateScene: (offset: number) => void;
 }
 
 export function Toolbar({
@@ -22,12 +26,16 @@ export function Toolbar({
   selectedCount,
   statusText,
   activeSceneName,
+  nextSceneName,
   showCheckedCount,
   showTotalCount,
+  canGoToPreviousScene,
+  canGoToNextScene,
   onSetActiveView,
   onToggleListenMode,
   onToggleLayoutMode,
   onStopListening,
+  onNavigateScene,
 }: ToolbarProps): JSX.Element {
   const activeModeLabel = activeView === 'monitor'
     ? 'FOH monitor'
@@ -130,13 +138,34 @@ export function Toolbar({
           <span className="toolbar-info-dot" aria-hidden="true"></span>
           <span>{infoText}</span>
         </span>
-        <div className="toolbar-status-trailing">
-          <span id="show-scene-pill" className={`toolbar-pill ${activeView === 'show' ? '' : 'is-hidden'}`}>
-            <span className="toolbar-pill-label">Scene</span><strong id="scene-status-text">{activeSceneName}</strong>
-          </span>
-          <span id="show-progress-pill" className={`toolbar-pill ${activeView === 'show' ? '' : 'is-hidden'}`}>
-            <span className="toolbar-pill-label">Checklist</span><strong id="show-progress-text">{showCheckedCount}/{showTotalCount} checked</strong>
-          </span>
+        <div className={`toolbar-scene-control ${activeView === 'show' ? '' : 'is-hidden'}`} aria-label="Scene controls">
+          <button
+            type="button"
+            className="toolbar-scene-step"
+            aria-label="Previous scene"
+            disabled={!canGoToPreviousScene}
+            onClick={() => onNavigateScene(-1)}
+          >
+            ‹
+          </button>
+          <div className="toolbar-scene-copy">
+            <span className="toolbar-pill-label">Scene</span>
+            <strong id="scene-status-text">{activeSceneName}</strong>
+          </div>
+          <span className="toolbar-scene-divider" aria-hidden="true"></span>
+          <div className="toolbar-scene-copy toolbar-scene-copy--checklist">
+            <span className="toolbar-pill-label">Checklist</span>
+            <strong id="show-progress-text">{showCheckedCount}/{showTotalCount}</strong>
+          </div>
+          <button
+            type="button"
+            className="toolbar-scene-next"
+            aria-label="Advance to next scene"
+            disabled={!canGoToNextScene}
+            onClick={() => onNavigateScene(1)}
+          >
+            {nextSceneName ? `Next: ${nextSceneName}` : 'End of show'}
+          </button>
         </div>
       </div>
     </section>

@@ -106,7 +106,25 @@ Current runtime settings include:
 
 ## Frontend development
 
-During frontend development, run the FastAPI backend on port `8000` and start the Vite dev server in a second terminal:
+During frontend development, use the repo-local helper to run the FastAPI backend on port `8000` and the Vite dev server on port `5173`:
+
+```text
+scripts/micwise-dev start
+scripts/micwise-dev stop
+scripts/micwise-dev restart
+scripts/micwise-dev status
+scripts/micwise-dev logs
+```
+
+Open the development UI at:
+
+```text
+http://127.0.0.1:5173/
+```
+
+The helper starts Uvicorn with reload enabled, so backend changes restart automatically. Vite hot-reloads frontend source changes.
+
+You can also run the two services manually in separate terminals:
 
 ```text
 cd frontend

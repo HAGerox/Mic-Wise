@@ -149,6 +149,7 @@ env.bak/
 venv.bak/
 
 # Generated Mic-Wise local show/runtime data
+.micwise-dev/
 backend/data/*.buffer
 backend/data/*.micwise
 frontend/*.tsbuildinfo

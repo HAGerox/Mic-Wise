@@ -762,8 +762,11 @@ function AppContent(): JSX.Element {
         selectedCount={state.selectedChannelIds.size}
         statusText={state.statusText}
         activeSceneName={activeSceneName}
+        nextSceneName={nextScene?.name ?? null}
         showCheckedCount={sceneChecklistStats.checked}
         showTotalCount={sceneChecklistStats.total}
+        canGoToPreviousScene={activeSceneIndex > 0}
+        canGoToNextScene={activeSceneIndex !== -1 && activeSceneIndex < orderedScenes.length - 1}
         onSetActiveView={(view) => {
           void handleSetActiveView(view);
         }}
@@ -773,6 +776,9 @@ function AppContent(): JSX.Element {
         onToggleLayoutMode={handleToggleLayoutMode}
         onStopListening={() => {
           void handleStopListening();
+        }}
+        onNavigateScene={(offset) => {
+          void handleNavigateScene(offset);
         }}
       />
 
@@ -810,16 +816,10 @@ function AppContent(): JSX.Element {
           <ShowSidebar
             channels={channels}
             activeScene={activeScene}
-            nextScene={nextScene}
             checklist={sceneChecklist}
             checkedCount={sceneChecklistStats.checked}
             totalCount={sceneChecklistStats.total}
-            canGoToPreviousScene={activeSceneIndex > 0}
-            canGoToNextScene={activeSceneIndex !== -1 && activeSceneIndex < orderedScenes.length - 1}
             hidden={state.activeView !== 'show'}
-            onNavigateScene={(offset) => {
-              void handleNavigateScene(offset);
-            }}
             onToggleChecklist={(channelId) => {
               handleToggleChecklist(channelId);
             }}

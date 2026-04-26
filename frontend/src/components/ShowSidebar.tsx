@@ -20,14 +20,10 @@ function getSceneAssignmentState(scene: SceneResponse | null, channelId: number)
 interface ShowSidebarProps {
   channels: ChannelResponse[];
   activeScene: SceneResponse | null;
-  nextScene: SceneResponse | null;
   checklist: Set<number>;
   checkedCount: number;
   totalCount: number;
-  canGoToPreviousScene: boolean;
-  canGoToNextScene: boolean;
   hidden: boolean;
-  onNavigateScene: (offset: number) => void;
   onToggleChecklist: (channelId: number) => void;
   onResetChecklist: () => void;
 }
@@ -35,14 +31,10 @@ interface ShowSidebarProps {
 export function ShowSidebar({
   channels,
   activeScene,
-  nextScene,
   checklist,
   checkedCount,
   totalCount,
-  canGoToPreviousScene,
-  canGoToNextScene,
   hidden,
-  onNavigateScene,
   onToggleChecklist,
   onResetChecklist,
 }: ShowSidebarProps): JSX.Element {
@@ -77,32 +69,6 @@ export function ShowSidebar({
           <strong>{checkedCount}/{totalCount}</strong>
           <small>{Math.max(totalCount - checkedCount, 0)} remaining</small>
         </div>
-      </section>
-
-      <section className="show-navigator" aria-label="Scene navigation">
-        <button
-          type="button"
-          className="secondary icon-button"
-          aria-label="Previous scene"
-          disabled={!canGoToPreviousScene}
-          onClick={() => onNavigateScene(-1)}
-        >
-          ‹
-        </button>
-        <div className="show-navigator-copy">
-          <span className="show-sidebar-eyebrow">Next cue</span>
-          <strong>{nextScene ? nextScene.name : 'End of show'}</strong>
-          <span>{nextScene ? getSceneSummary(nextScene) : 'No further scenes queued.'}</span>
-        </div>
-        <button
-          type="button"
-          className="show-next-button"
-          aria-label="Advance to next scene"
-          disabled={!canGoToNextScene}
-          onClick={() => onNavigateScene(1)}
-        >
-          Next scene
-        </button>
       </section>
 
       <section className="show-sidebar-note">
