@@ -153,7 +153,6 @@ function ChannelCardComponent({
 
           <div className="channel-meta-row">
             <div className="channel-meta-copy">
-              {isLayoutMode ? <span className="channel-actions">Drag</span> : null}
               {activeAlert ? (
                 <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
               ) : null}

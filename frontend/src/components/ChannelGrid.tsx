@@ -84,6 +84,8 @@ export function ChannelGrid({
 }: ChannelGridProps): JSX.Element {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const sortableRef = useRef<Sortable | null>(null);
+  const onCloseModalRef = useRef(onCloseModal);
+  const onPersistOrderRef = useRef(onPersistOrder);
 
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
   const cardStates = useMemo<ChannelCardState[]>(() => {
@@ -135,6 +137,11 @@ export function ChannelGrid({
   ]);
 
   useEffect(() => {
+    onCloseModalRef.current = onCloseModal;
+    onPersistOrderRef.current = onPersistOrder;
+  }, [onCloseModal, onPersistOrder]);
+
+  useEffect(() => {
     const gridElement = gridRef.current;
     if (!gridElement) {
       return undefined;
@@ -158,13 +165,13 @@ export function ChannelGrid({
         touchStartThreshold: 4,
         disabled: !layoutMode || activeView !== 'monitor',
         onStart: () => {
-          onCloseModal();
+          onCloseModalRef.current();
         },
         onEnd: async (event) => {
           const orderedIds = Array.from(event.to.children)
             .map((child) => Number((child as HTMLElement).dataset.channelId ?? Number.NaN))
             .filter(Number.isInteger);
-          await onPersistOrder(orderedIds);
+          await onPersistOrderRef.current(orderedIds);
         },
       });
     }
@@ -176,7 +183,7 @@ export function ChannelGrid({
         sortableRef.current.option('disabled', true);
       }
     };
-  }, [activeView, layoutMode, onCloseModal, onPersistOrder]);
+  }, [activeView, layoutMode]);
 
   useEffect(() => () => {
     sortableRef.current?.destroy();

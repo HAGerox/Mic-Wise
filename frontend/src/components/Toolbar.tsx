@@ -34,6 +34,9 @@ export function Toolbar({
     : activeView === 'show'
       ? 'Scene checklist'
       : 'System setup';
+  const infoText = layoutMode && activeView === 'monitor'
+    ? 'Reorder mode: drag strips to arrange, then lock layout.'
+    : '';
 
   return (
     <section className="controls toolbar">
@@ -120,14 +123,21 @@ export function Toolbar({
       </div>
 
       <div className="toolbar-status-strip" aria-label="Current system status">
-        <span className="toolbar-pill"><span className="toolbar-pill-label">Engine</span><strong id="status-text">{statusText}</strong></span>
-        <span className="toolbar-pill"><span className="toolbar-pill-label">Listen</span><strong id="selection-count-text">{selectedCount} channel{selectedCount === 1 ? '' : 's'}</strong></span>
-        <span id="show-scene-pill" className={`toolbar-pill ${activeView === 'show' ? '' : 'is-hidden'}`}>
-          <span className="toolbar-pill-label">Scene</span><strong id="scene-status-text">{activeSceneName}</strong>
+        <span className="toolbar-pill toolbar-pill--compact">
+          <span className="toolbar-pill-label">Engine</span><strong id="status-text">{statusText}</strong>
         </span>
-        <span id="show-progress-pill" className={`toolbar-pill ${activeView === 'show' ? '' : 'is-hidden'}`}>
-          <span className="toolbar-pill-label">Checklist</span><strong id="show-progress-text">{showCheckedCount}/{showTotalCount} checked</strong>
+        <span className={`toolbar-info-pill ${infoText ? '' : 'is-hidden'}`} role="status">
+          <span className="toolbar-info-dot" aria-hidden="true"></span>
+          <span>{infoText}</span>
         </span>
+        <div className="toolbar-status-trailing">
+          <span id="show-scene-pill" className={`toolbar-pill ${activeView === 'show' ? '' : 'is-hidden'}`}>
+            <span className="toolbar-pill-label">Scene</span><strong id="scene-status-text">{activeSceneName}</strong>
+          </span>
+          <span id="show-progress-pill" className={`toolbar-pill ${activeView === 'show' ? '' : 'is-hidden'}`}>
+            <span className="toolbar-pill-label">Checklist</span><strong id="show-progress-text">{showCheckedCount}/{showTotalCount} checked</strong>
+          </span>
+        </div>
       </div>
     </section>
   );
