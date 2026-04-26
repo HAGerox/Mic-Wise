@@ -424,11 +424,16 @@ textarea::placeholder {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  gap: 4px;
 }
 
 body.monitor-view-active .monitor-workspace {
-  padding-bottom: calc(var(--monitor-dock-height, var(--monitor-dock-panel-height)) + 8px);
+  padding-bottom: 2px;
+}
+
+body.monitor-view-active .channel-grid-shell,
+body.monitor-view-active .show-sidebar {
+  padding-bottom: calc(var(--monitor-dock-height, var(--monitor-dock-panel-height)) + 6px);
 }
 
 #monitor-view.is-show-mode .monitor-workspace {
@@ -499,6 +504,7 @@ body.monitor-view-active .monitor-dock {
 .channel-card {
   min-height: 138px;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   padding: 10px;
   border-radius: var(--radius-md);
@@ -757,6 +763,7 @@ body.monitor-view-active .monitor-dock {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
   gap: 10px;
+  align-items: stretch;
 }
 
 .meter--vertical-shell {
@@ -767,15 +774,16 @@ body.monitor-view-active .monitor-dock {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background: var(--bg-interactive);
+  min-height: 100%;
 }
 
 .meter--vertical {
   position: relative;
   min-height: 90px;
   border-radius: var(--radius-xs);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: none;
   overflow: hidden;
-  background: var(--bg-recessed);
+  background: linear-gradient(180deg, #ef4444 0%, #f59e0b 20%, #84cc16 46%, #27a644 100%);
 }
 
 .meter--vertical::before {
@@ -792,9 +800,9 @@ body.monitor-view-active .monitor-dock {
 
 .meter-fill {
   position: absolute;
-  inset: auto 0 0;
-  min-height: 2px;
-  background: linear-gradient(180deg, #ef4444 0%, #f59e0b 20%, #84cc16 46%, #27a644 100%);
+  inset: 0 0 auto;
+  max-height: calc(100% - 2px);
+  background: var(--bg-recessed);
 }
 
 .meter-peak-line {
@@ -816,12 +824,13 @@ body.monitor-view-active .monitor-dock {
 .channel-signal-stack {
   min-width: 0;
   display: grid;
+  grid-template-rows: minmax(68px, 1fr) auto;
   gap: 8px;
-  align-content: space-between;
 }
 
 .channel-sparkline-shell {
-  height: 36px;
+  height: auto;
+  min-height: 68px;
   padding: 4px 6px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
@@ -1296,6 +1305,7 @@ body.monitor-view-active .monitor-dock {
   width: 100%;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   padding: 10px;
   text-align: left;
@@ -1311,6 +1321,11 @@ body.monitor-view-active .monitor-dock {
   font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.setup-showfile-card {
+  align-content: start;
 }
 
 .setup-nav-item strong,
@@ -1546,6 +1561,9 @@ body.monitor-view-active .monitor-dock {
 .scene-list-panel,
 .scene-editor-panel {
   min-height: 32rem;
+  display: grid;
+  gap: 12px;
+  align-content: start;
 }
 
 .scene-list-item {

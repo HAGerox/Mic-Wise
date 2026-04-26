@@ -60,6 +60,7 @@ function ChannelCardComponent({
   }, []);
 
   const repeatedName = isDefaultChannelName(channel);
+  const clampedRmsRatio = Math.min(Math.max(metrics.rmsRatio, 0), 1);
 
   const clearLongPress = (): void => {
     if (longPressTimerRef.current !== null) {
@@ -132,7 +133,7 @@ function ChannelCardComponent({
       <div className="channel-meter-row" aria-label="Live signal level">
         <div className="meter meter--vertical-shell">
           <div className="meter meter--vertical">
-            <div className="meter-fill" style={{ height: `${metrics.rmsRatio * 100}%` }}></div>
+            <div className="meter-fill" style={{ height: `${(1 - clampedRmsRatio) * 100}%` }}></div>
             <div className="meter-peak-line" style={{ bottom: `${metrics.peakRatio * 100}%` }}></div>
           </div>
           <div className="meter-scale" aria-hidden="true">

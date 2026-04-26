@@ -328,24 +328,6 @@ export function SetupView({
               <span className="setup-eyebrow">Setup</span>
               <h2>Show engineering</h2>
             </div>
-            <div className="panel-heading-actions">
-              <button type="button" className="secondary" onClick={() => void onExportShowfile()}>Export showfile</button>
-              <button type="button" onClick={() => importInputRef.current?.click()}>Import showfile</button>
-              <input
-                ref={importInputRef}
-                className="is-hidden"
-                type="file"
-                accept=".json,.micwise.json"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] ?? null;
-                  if (!file) {
-                    return;
-                  }
-                  void onImportShowfile(file);
-                  event.target.value = '';
-                }}
-              />
-            </div>
           </div>
 
           <nav className="setup-nav" aria-label="Setup navigation">
@@ -428,6 +410,32 @@ export function SetupView({
               <span>Record armed</span>
               <strong>{recordArmedCount}</strong>
             </div>
+          </div>
+              </section>
+
+              <section className="panel-card setup-summary-card setup-showfile-card">
+          <div>
+            <h3>Showfile</h3>
+            <p className="setup-helper-text">Export a portable backup before major edits. Import replaces the current channel, scene, and settings state from a Mic-Wise JSON showfile.</p>
+          </div>
+
+          <div className="panel-heading-actions">
+            <button type="button" className="secondary" onClick={() => void onExportShowfile()}>Export showfile</button>
+            <button type="button" onClick={() => importInputRef.current?.click()}>Import showfile</button>
+            <input
+              ref={importInputRef}
+              className="is-hidden"
+              type="file"
+              accept=".json,.micwise.json"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (!file) {
+                  return;
+                }
+                void onImportShowfile(file);
+                event.target.value = '';
+              }}
+            />
           </div>
               </section>
 
