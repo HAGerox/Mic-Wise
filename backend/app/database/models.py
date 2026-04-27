@@ -42,6 +42,7 @@ class SettingsRecord(Base):
     radioworld_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     radioworld_flash_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     radioworld_hold_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    radioworld_interface_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

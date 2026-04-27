@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { appStateReducer, initialAppState } from './appStateReducer';
 
 describe('appStateReducer', () => {
+  it('opens setup on the general tab by default', () => {
+    expect(initialAppState.setupTab).toBe('general');
+  });
+
   it('toggles single-listen selection and opens the modal', () => {
     const firstPass = appStateReducer(initialAppState, {
       type: 'interactChannelCard',

@@ -45,6 +45,7 @@ class SettingsResponse(BaseModel):
     radioworld_enabled: bool
     radioworld_flash_enabled: bool
     radioworld_hold_seconds: int
+    radioworld_interface_ip: str | None
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -71,6 +72,27 @@ class SettingsUpdateRequest(BaseModel):
     radioworld_enabled: bool | None = None
     radioworld_flash_enabled: bool | None = None
     radioworld_hold_seconds: int | None = None
+    radioworld_interface_ip: str | None = None
+
+
+class NetworkInterfaceResponse(BaseModel):
+    """Serialized IPv4 network interface."""
+
+    name: str
+    display_name: str
+    ipv4_address: str
+    broadcast_address: str | None
+    is_loopback: bool
+
+
+class RadioWorldTestResponse(BaseModel):
+    """Details returned after sending a RadioWorld test packet."""
+
+    status: str
+    sender_ip: str
+    source_port: int
+    destinations: list[str]
+    destination_port: int
 
 
 class AudioInputDeviceResponse(BaseModel):
@@ -313,6 +335,7 @@ class ShowfileSettingsPayload(BaseModel):
     radioworld_enabled: bool = False
     radioworld_flash_enabled: bool = False
     radioworld_hold_seconds: int = 8
+    radioworld_interface_ip: str | None = None
 
 
 class ShowfilePayload(BaseModel):

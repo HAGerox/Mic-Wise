@@ -15,6 +15,8 @@ from app.api.schemas import (
 	ChannelWaveformResponse,
 	HealthResponse,
 	MeterSnapshotResponse,
+	NetworkInterfaceResponse,
+	RadioWorldTestResponse,
 	SceneCreateRequest,
 	SceneSyncEventRequest,
 	SceneSyncEventResponse,
@@ -47,6 +49,7 @@ from app.database.repository import (
 	update_channel,
 	update_settings,
 )
+from app.network.interfaces import list_ipv4_network_interfaces
 
 router = APIRouter()
 
@@ -139,6 +142,7 @@ async def patch_settings(
 		enabled=bool(updated_settings.radioworld_enabled),
 		flash_enabled=bool(updated_settings.radioworld_flash_enabled),
 		hold_seconds=int(updated_settings.radioworld_hold_seconds),
+		interface_ip=updated_settings.radioworld_interface_ip,
 	)
 	if set(changes) & SYNC_SETTING_FIELDS:
 		await request.app.state.scene_sync_service.reload()
@@ -149,6 +153,12 @@ async def patch_settings(
 async def read_audio_input_devices() -> list[AudioInputDeviceResponse]:
 	"""Return the currently available cross-platform audio capture devices."""
 	return [AudioInputDeviceResponse(**device.to_dict()) for device in list_audio_input_devices()]
+
+
+@router.get("/network/interfaces", response_model=list[NetworkInterfaceResponse])
+async def read_network_interfaces() -> list[NetworkInterfaceResponse]:
+	"""Return IPv4 interfaces that can source RadioWorld UDP broadcasts."""
+	return [NetworkInterfaceResponse(**interface.to_dict()) for interface in list_ipv4_network_interfaces()]
 
 
 @router.get("/channels", response_model=list[ChannelResponse])
@@ -316,6 +326,25 @@ async def read_active_alerts(request: Request) -> list[AudioAlertResponse]:
 	return responses
 
 
+@router.post("/alerts/test", response_model=AudioAlertResponse)
+async def test_alerts(request: Request) -> AudioAlertResponse:
+	"""Inject a synthetic alert so the settings UI can test popups."""
+	alert = request.app.state.alert_analysis.inject_test_alert()
+	return AudioAlertResponse(
+		**alert.to_dict(),
+		channel_ids=[],
+		channel_numbers=[alert.input_index + 1],
+		channel_names=[],
+	)
+
+
+@router.post("/radioworld/test", response_model=RadioWorldTestResponse)
+async def test_radioworld(request: Request) -> RadioWorldTestResponse:
+	"""Send a synthetic RadioWorld UDP message using current settings."""
+	status = await request.app.state.radioworld_broadcaster.send_test_message()
+	return RadioWorldTestResponse(status="ok", **status.to_dict())
+
+
 @router.post("/sync/events", response_model=SceneSyncEventResponse)
 async def apply_scene_sync_event_route(
 	payload: SceneSyncEventRequest,
@@ -384,6 +413,7 @@ async def upload_showfile(payload: ShowfilePayload, request: Request) -> Showfil
 		enabled=bool(updated_settings.radioworld_enabled),
 		flash_enabled=bool(updated_settings.radioworld_flash_enabled),
 		hold_seconds=int(updated_settings.radioworld_hold_seconds),
+		interface_ip=updated_settings.radioworld_interface_ip,
 	)
 	await request.app.state.scene_sync_service.reload()
 	return ShowfileImportResponse(status="ok", channels=len(payload.channels), scenes=len(payload.scenes))

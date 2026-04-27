@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI):
 		enabled=bool(show_settings.radioworld_enabled),
 		flash_enabled=bool(show_settings.radioworld_flash_enabled),
 		hold_seconds=int(show_settings.radioworld_hold_seconds),
+		interface_ip=show_settings.radioworld_interface_ip,
 	)
 	app.state.radioworld_broadcaster = radioworld_broadcaster
 

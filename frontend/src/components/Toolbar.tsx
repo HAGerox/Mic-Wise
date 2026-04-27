@@ -1,5 +1,11 @@
 import type { ActiveView } from '../types/ui';
 
+const MODE_HELP: Record<ActiveView, string> = {
+  monitor: 'Monitor mode shows every RF path with live meters, alerts, and listening controls.',
+  show: 'Scene mode follows the active scene. Press Y to mark checked, N to reopen, or hold a strip to toggle it.',
+  setup: 'Setup mode edits channels, scenes, cue sync, showfile import/export, and system defaults.',
+};
+
 interface ToolbarProps {
   activeView: ActiveView;
   layoutMode: boolean;
@@ -63,34 +69,40 @@ export function Toolbar({
               id="view-monitor"
               className={`segment-button ${activeView === 'monitor' ? 'is-active' : ''}`}
               type="button"
+              aria-describedby="mode-help-monitor"
               onClick={() => onSetActiveView('monitor')}
             >
               <span className="button-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" focusable="false"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path><path d="M12 16v4"></path></svg>
               </span>
               <span className="button-label">Monitor</span>
+              <span id="mode-help-monitor" className="mode-help" role="tooltip">{MODE_HELP.monitor}</span>
             </button>
             <button
               id="view-show"
               className={`segment-button ${activeView === 'show' ? 'is-active' : ''}`}
               type="button"
+              aria-describedby="mode-help-show"
               onClick={() => onSetActiveView('show')}
             >
               <span className="button-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" focusable="false"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path><path d="m17 14 4 4-4 4"></path></svg>
               </span>
               <span className="button-label">Show</span>
+              <span id="mode-help-show" className="mode-help" role="tooltip">{MODE_HELP.show}</span>
             </button>
             <button
               id="view-setup"
               className={`segment-button ${activeView === 'setup' ? 'is-active' : ''}`}
               type="button"
+              aria-describedby="mode-help-setup"
               onClick={() => onSetActiveView('setup')}
             >
               <span className="button-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.93 4.93 2.12 2.12"></path><path d="m16.95 16.95 2.12 2.12"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m4.93 19.07 2.12-2.12"></path><path d="m16.95 7.05 2.12-2.12"></path><circle cx="12" cy="12" r="3.5"></circle></svg>
               </span>
               <span className="button-label">Setup</span>
+              <span id="mode-help-setup" className="mode-help" role="tooltip">{MODE_HELP.setup}</span>
             </button>
           </div>
         </div>

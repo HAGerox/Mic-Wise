@@ -266,7 +266,25 @@ class AlertAnalysisService:
 
     def get_active_alerts(self) -> list[AudioAlert]:
         """Return the currently active alerts sorted newest first."""
-        return sorted(self.latest_alerts, key=lambda alert: alert.updated_at, reverse=True)
+        return sorted(self._active_alerts.values(), key=lambda alert: alert.updated_at, reverse=True)
+
+    def inject_test_alert(self) -> AudioAlert:
+        """Insert a short-lived synthetic alert for testing the UI path."""
+        now = time.time()
+        alert = AudioAlert(
+            id=f"test-alert-{int(now * 1000)}",
+            kind="pop",
+            severity="warning",
+            input_index=0,
+            title="Test alert",
+            message="Synthetic alert generated from settings.",
+            score=1.0,
+            started_at=now,
+            updated_at=now,
+        )
+        self._active_alerts[(alert.kind, alert.input_index)] = alert
+        self.latest_alerts = self.get_active_alerts()
+        return alert
 
     async def _run(self) -> None:
         """Poll the shared buffer and maintain the active alert set."""

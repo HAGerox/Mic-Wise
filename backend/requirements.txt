@@ -4,6 +4,7 @@ sounddevice
 numpy
 aiortc
 zeroconf
+ifaddr
 sqlalchemy
 greenlet
 aiosqlite

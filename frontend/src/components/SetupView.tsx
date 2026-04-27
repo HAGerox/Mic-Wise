@@ -6,6 +6,8 @@ import type {
   AudioInputDeviceResponse,
   ChannelResponse,
   ChannelUpdateRequest,
+  NetworkInterfaceResponse,
+  SceneAssignmentState,
   SceneChannelAssignmentRequest,
   SceneResponse,
   SceneSyncStatusResponse,
@@ -16,6 +18,16 @@ import type {
 import type { ProgramChannelDraft, SetupTab } from '../types/ui';
 
 const PROGRAM_AUTOSAVE_DELAY_MS = 450;
+
+const SCENE_ASSIGNMENT_STATES: Array<{ state: SceneAssignmentState; label: string; shortLabel: string }> = [
+  { state: 'onstage', label: 'On stage', shortLabel: 'On' },
+  { state: 'ready', label: 'About to enter', shortLabel: 'Ready' },
+  { state: 'off', label: 'Not in scene', shortLabel: 'Off' },
+];
+
+function getSceneStateOption(state: SceneAssignmentState): { state: SceneAssignmentState; label: string; shortLabel: string } {
+  return SCENE_ASSIGNMENT_STATES.find((option) => option.state === state) ?? SCENE_ASSIGNMENT_STATES[2];
+}
 
 function getSceneSummary(scene: SceneResponse | null): string {
   const assignments = scene?.channel_assignments ?? [];
@@ -178,6 +190,7 @@ interface SetupViewProps {
   channels: ChannelResponse[];
   scenes: SceneResponse[];
   audioDevices: AudioInputDeviceResponse[];
+  networkInterfaces: NetworkInterfaceResponse[];
   activeSceneId: number | null;
   onSetSetupTab: (tab: SetupTab) => void;
   onSaveSettings: (payload: SettingsUpdateRequest) => Promise<void>;
@@ -196,8 +209,11 @@ interface SetupViewProps {
     sceneId: number,
     payload: Pick<SceneUpdateRequest, 'sync_osc_address' | 'sync_osc_argument' | 'sync_midi_pattern'>,
   ) => Promise<void>;
+  onResetChecklist: () => void;
   onExportShowfile: () => Promise<void>;
   onImportShowfile: (file: File) => Promise<void>;
+  onTestAlerts: () => Promise<void>;
+  onTestRadioWorld: () => Promise<void>;
 }
 
 export function SetupView({
@@ -208,6 +224,7 @@ export function SetupView({
   channels,
   scenes,
   audioDevices,
+  networkInterfaces,
   activeSceneId,
   onSetSetupTab,
   onSaveSettings,
@@ -220,8 +237,11 @@ export function SetupView({
   onSaveSceneName,
   onSaveSceneAssignments,
   onSaveSceneCueMapping,
+  onResetChecklist,
   onExportShowfile,
   onImportShowfile,
+  onTestAlerts,
+  onTestRadioWorld,
 }: SetupViewProps): JSX.Element {
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
   const orderedScenes = useMemo(() => sortScenes(scenes), [scenes]);
@@ -264,6 +284,7 @@ export function SetupView({
     radioworld_enabled: false,
     radioworld_flash_enabled: false,
     radioworld_hold_seconds: 8,
+    radioworld_interface_ip: '',
   });
   const [sceneName, setSceneName] = useState('');
   const [sceneCueForm, setSceneCueForm] = useState({
@@ -271,7 +292,9 @@ export function SetupView({
     sync_osc_argument: '',
     sync_midi_pattern: '',
   });
-  const [sceneAssignments, setSceneAssignments] = useState<Record<number, string>>({});
+  const [sceneAssignments, setSceneAssignments] = useState<Record<number, SceneAssignmentState>>({});
+  const [sceneStateBrush, setSceneStateBrush] = useState<SceneAssignmentState>('onstage');
+  const sceneAssignmentsRef = useRef<Record<number, SceneAssignmentState>>({});
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -297,6 +320,7 @@ export function SetupView({
       radioworld_enabled: Boolean(settings?.radioworld_enabled),
       radioworld_flash_enabled: Boolean(settings?.radioworld_flash_enabled),
       radioworld_hold_seconds: Math.max(1, Number(settings?.radioworld_hold_seconds ?? 8)),
+      radioworld_interface_ip: settings?.radioworld_interface_ip ?? '',
     });
   }, [settings]);
 
@@ -307,9 +331,11 @@ export function SetupView({
       sync_osc_argument: activeScene?.sync_osc_argument ?? '',
       sync_midi_pattern: activeScene?.sync_midi_pattern ?? '',
     });
-    setSceneAssignments(
-      Object.fromEntries((activeScene?.channel_assignments ?? []).map((assignment) => [assignment.channel_id, assignment.state])),
-    );
+    const nextAssignments = Object.fromEntries(
+      (activeScene?.channel_assignments ?? []).map((assignment) => [assignment.channel_id, assignment.state]),
+    ) as Record<number, SceneAssignmentState>;
+    sceneAssignmentsRef.current = nextAssignments;
+    setSceneAssignments(nextAssignments);
   }, [activeScene]);
 
   const setupSections: Array<{ id: SetupTab; label: string; icon: string }> = [
@@ -318,6 +344,34 @@ export function SetupView({
     { id: 'scenes', label: 'Scenes', icon: 'SCN' },
     { id: 'automation', label: 'Automation', icon: 'AUTO' },
   ];
+
+  const sceneAssignmentCounts = SCENE_ASSIGNMENT_STATES.reduce<Record<SceneAssignmentState, number>>(
+    (counts, option) => ({
+      ...counts,
+      [option.state]: orderedChannels.filter((channel) => (sceneAssignments[channel.id] ?? 'off') === option.state).length,
+    }),
+    { off: 0, ready: 0, onstage: 0 },
+  );
+
+  const applySceneState = (channelId: number, nextState: SceneAssignmentState): void => {
+    const currentAssignments = sceneAssignmentsRef.current;
+
+    if (!activeScene || (currentAssignments[channelId] ?? 'off') === nextState) {
+      return;
+    }
+
+    const nextAssignments = {
+      ...currentAssignments,
+      [channelId]: nextState,
+    };
+    sceneAssignmentsRef.current = nextAssignments;
+    setSceneAssignments(nextAssignments);
+    const payload: SceneChannelAssignmentRequest[] = orderedChannels.map((orderedChannel) => ({
+      channel_id: orderedChannel.id,
+      state: nextAssignments[orderedChannel.id] ?? 'off',
+    }));
+    void onSaveSceneAssignments(activeScene.id, payload);
+  };
 
   return (
     <section id="setup-view" className={`view-panel ${hidden ? 'is-hidden' : ''}`}>
@@ -611,6 +665,7 @@ export function SetupView({
             <h3>Scene map</h3>
           </div>
           <div className="panel-heading-actions">
+            <button type="button" className="secondary" onClick={onResetChecklist}>Reset scene checks</button>
             <button id="add-scene" type="button" onClick={() => void onAddScene()}>Add scene</button>
           </div>
         </div>
@@ -749,54 +804,57 @@ export function SetupView({
                 </div>
               </section>
 
-              <div className="table-shell">
-                <table className="program-table scene-table">
-                  <thead>
-                    <tr>
-                      <th>Channel</th>
-                      <th>Name</th>
-                      <th>Scene status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="scene-table-body">
-                    {orderedChannels.map((channel) => {
-                      const sceneState = sceneAssignments[channel.id] ?? 'off';
-                      return (
-                        <tr key={channel.id} data-channel-id={String(channel.id)} className={`scene-row is-${sceneState}`}>
-                          <td>CH {channel.number}</td>
-                          <td>{channel.name}</td>
-                          <td>
-                            <select
-                              className="scene-state-select"
-                              data-field="scene_state"
-                              value={sceneState}
-                              onChange={(event) => {
-                                if (!activeScene) {
-                                  return;
-                                }
-                                const nextAssignments = {
-                                  ...sceneAssignments,
-                                  [channel.id]: event.target.value,
-                                };
-                                setSceneAssignments(nextAssignments);
-                                const payload: SceneChannelAssignmentRequest[] = orderedChannels.map((orderedChannel) => ({
-                                  channel_id: orderedChannel.id,
-                                  state: (nextAssignments[orderedChannel.id] ?? 'off') as SceneChannelAssignmentRequest['state'],
-                                }));
-                                void onSaveSceneAssignments(activeScene.id, payload);
-                              }}
-                            >
-                              <option value="off">Not in scene</option>
-                              <option value="ready">About to enter</option>
-                              <option value="onstage">On stage</option>
-                            </select>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <section className="scene-status-programmer" aria-labelledby="scene-status-programmer-title">
+                <div className="scene-status-programmer-header">
+                  <div>
+                    <span className="setup-eyebrow">Scene status</span>
+                    <h3 id="scene-status-programmer-title">Paint channel states</h3>
+                    <p>Choose a status, then click channel numbers to program this scene in one pass.</p>
+                  </div>
+
+                  <div className="scene-status-brushes" role="radiogroup" aria-label="Scene status brush">
+                    {SCENE_ASSIGNMENT_STATES.map((option) => (
+                      <button
+                        key={option.state}
+                        type="button"
+                        className={`scene-status-brush is-${option.state} ${sceneStateBrush === option.state ? 'is-active' : ''}`}
+                        role="radio"
+                        aria-checked={sceneStateBrush === option.state}
+                        onClick={() => setSceneStateBrush(option.state)}
+                      >
+                        <span className="scene-status-dot" aria-hidden="true" />
+                        <strong>{option.label}</strong>
+                        <span>{sceneAssignmentCounts[option.state]}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div id="scene-table-body" className="scene-status-grid" aria-label="Channel scene status">
+                  {orderedChannels.map((channel) => {
+                    const sceneState = sceneAssignments[channel.id] ?? 'off';
+                    const sceneStateOption = getSceneStateOption(sceneState);
+                    return (
+                      <button
+                        key={channel.id}
+                        type="button"
+                        data-channel-id={String(channel.id)}
+                        className={`scene-status-tile is-${sceneState}`}
+                        disabled={!activeScene}
+                        aria-label={`Set channel ${channel.number}, ${channel.name}, to ${getSceneStateOption(sceneStateBrush).label}`}
+                        title={`${channel.name}: ${sceneStateOption.label}`}
+                        onClick={() => applySceneState(channel.id, sceneStateBrush)}
+                      >
+                        <span className="scene-status-channel-number">{channel.number}</span>
+                        <span className="scene-status-channel-copy">
+                          <strong>{channel.name}</strong>
+                          <span>{sceneStateOption.label}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
             </div>
           </section>
         </div>
@@ -937,6 +995,11 @@ export function SetupView({
             <h3>Alerts and RadioWorld</h3>
           </div>
 
+          <div className="panel-heading-actions">
+            <button type="button" className="secondary" onClick={() => void onTestAlerts()}>Test alert</button>
+            <button type="button" className="secondary" onClick={() => void onTestRadioWorld()}>Test RadioWorld</button>
+          </div>
+
           <div className="scene-sync-settings-grid">
             <label className="field-group field-group--toggle" htmlFor="alerts-enabled">
               <span>Detector enabled</span>
@@ -986,6 +1049,7 @@ export function SetupView({
                     radioworld_enabled: nextForm.radioworld_enabled,
                     radioworld_flash_enabled: nextForm.radioworld_flash_enabled,
                     radioworld_hold_seconds: nextForm.radioworld_hold_seconds,
+                    radioworld_interface_ip: nextForm.radioworld_interface_ip || null,
                   });
                 }}
               />
@@ -1005,6 +1069,7 @@ export function SetupView({
                     radioworld_enabled: nextForm.radioworld_enabled,
                     radioworld_flash_enabled: nextForm.radioworld_flash_enabled,
                     radioworld_hold_seconds: nextForm.radioworld_hold_seconds,
+                    radioworld_interface_ip: nextForm.radioworld_interface_ip || null,
                   });
                 }}
               />
@@ -1031,9 +1096,36 @@ export function SetupView({
                     radioworld_enabled: alertsForm.radioworld_enabled,
                     radioworld_flash_enabled: alertsForm.radioworld_flash_enabled,
                     radioworld_hold_seconds: alertsForm.radioworld_hold_seconds,
+                    radioworld_interface_ip: alertsForm.radioworld_interface_ip || null,
                   });
                 }}
               />
+            </label>
+
+            <label className="field-group" htmlFor="radioworld-interface-ip">
+              <span>RadioWorld interface</span>
+              <select
+                id="radioworld-interface-ip"
+                disabled={!alertsForm.radioworld_enabled}
+                value={alertsForm.radioworld_interface_ip}
+                onChange={(event) => {
+                  const nextForm = { ...alertsForm, radioworld_interface_ip: event.target.value };
+                  setAlertsForm(nextForm);
+                  void onSaveSettings({
+                    radioworld_enabled: nextForm.radioworld_enabled,
+                    radioworld_flash_enabled: nextForm.radioworld_flash_enabled,
+                    radioworld_hold_seconds: nextForm.radioworld_hold_seconds,
+                    radioworld_interface_ip: nextForm.radioworld_interface_ip || null,
+                  });
+                }}
+              >
+                <option value="">Auto / default route</option>
+                {networkInterfaces.map((networkInterface) => (
+                  <option key={`${networkInterface.name}-${networkInterface.ipv4_address}`} value={networkInterface.ipv4_address}>
+                    {networkInterface.display_name}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 

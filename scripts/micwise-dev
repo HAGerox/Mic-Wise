@@ -7,6 +7,8 @@ BACKEND_PID_FILE="$STATE_DIR/backend.pid"
 FRONTEND_PID_FILE="$STATE_DIR/frontend.pid"
 BACKEND_LOG="$STATE_DIR/backend.log"
 FRONTEND_LOG="$STATE_DIR/frontend.log"
+BACKEND_DEPS_STAMP="$STATE_DIR/backend-deps.stamp"
+FRONTEND_DEPS_STAMP="$STATE_DIR/frontend-deps.stamp"
 
 HOST="${MICWISE_HOST:-127.0.0.1}"
 PORT="${MICWISE_PORT:-8000}"
@@ -67,6 +69,92 @@ start_process() {
 	)
 }
 
+newer_than() {
+	local target="$1"
+	shift
+
+	if [[ ! -e "$target" ]]; then
+		return 0
+	fi
+
+	local path
+	for path in "$@"; do
+		if [[ -e "$path" ]] && find "$path" -newer "$target" -print -quit | grep -q .; then
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+ensure_python() {
+	if [[ -x "$PYTHON_BIN" ]]; then
+		return
+	fi
+
+	if [[ "$PYTHON_BIN" != "$ROOT_DIR/.venv/bin/python" ]]; then
+		printf 'Python virtualenv not found at %s\n' "$PYTHON_BIN" >&2
+		printf 'Create it first, or set MICWISE_PYTHON.\n' >&2
+		exit 1
+	fi
+
+	printf 'Creating Python virtualenv...\n'
+	python3 -m venv "$ROOT_DIR/.venv"
+	"$PYTHON_BIN" -m pip install -U pip
+}
+
+ensure_backend_deps() {
+	local requirements="$ROOT_DIR/backend/requirements.txt"
+
+	if newer_than "$BACKEND_DEPS_STAMP" "$requirements"; then
+		printf 'Installing backend dependencies...\n'
+		"$PYTHON_BIN" -m pip install -r "$requirements"
+		touch "$BACKEND_DEPS_STAMP"
+	fi
+}
+
+ensure_npm() {
+	if ! command -v npm >/dev/null 2>&1; then
+		printf 'npm is required for frontend install/build.\n' >&2
+		exit 1
+	fi
+}
+
+ensure_frontend_deps() {
+	local package_json="$ROOT_DIR/frontend/package.json"
+	local package_lock="$ROOT_DIR/frontend/package-lock.json"
+
+	if [[ ! -d "$ROOT_DIR/frontend/node_modules" ]] || newer_than "$FRONTEND_DEPS_STAMP" "$package_json" "$package_lock"; then
+		printf 'Installing frontend dependencies...\n'
+		npm --prefix "$ROOT_DIR/frontend" install
+		touch "$FRONTEND_DEPS_STAMP"
+	fi
+}
+
+build_frontend_if_needed() {
+	local dist_index="$ROOT_DIR/frontend/dist/index.html"
+
+	if newer_than "$dist_index" \
+		"$ROOT_DIR/frontend/src" \
+		"$ROOT_DIR/frontend/index.html" \
+		"$ROOT_DIR/frontend/package.json" \
+		"$ROOT_DIR/frontend/package-lock.json" \
+		"$ROOT_DIR/frontend/styles.css"; then
+		printf 'Building frontend for backend-served UI...\n'
+		npm --prefix "$ROOT_DIR/frontend" run build
+	else
+		printf 'Frontend build is up to date.\n'
+	fi
+}
+
+prepare() {
+	ensure_python
+	ensure_backend_deps
+	ensure_npm
+	ensure_frontend_deps
+	build_frontend_if_needed
+}
+
 stop_process() {
 	local name="$1"
 	local pid_file="$2"
@@ -93,15 +181,7 @@ stop_process() {
 }
 
 start() {
-	if [[ ! -x "$PYTHON_BIN" ]]; then
-		printf 'Python virtualenv not found at %s\n' "$PYTHON_BIN" >&2
-		printf 'Run the README quick-start install commands first, or set MICWISE_PYTHON.\n' >&2
-		exit 1
-	fi
-	if [[ ! -d "$ROOT_DIR/frontend/node_modules" ]]; then
-		printf 'Frontend dependencies are missing. Run: cd frontend && npm install\n' >&2
-		exit 1
-	fi
+	prepare
 
 	start_process "backend" "$BACKEND_PID_FILE" "$BACKEND_LOG" \
 		"$PYTHON_BIN" -m uvicorn app.main:app --app-dir backend --reload --host "$HOST" --port "$PORT"

@@ -120,6 +120,12 @@ async def _ensure_show_file_compatibility(database: DatabaseManager) -> None:
                     "ALTER TABLE settings ADD COLUMN radioworld_hold_seconds INTEGER NOT NULL DEFAULT 8",
                 ),
             )
+        if settings_columns and "radioworld_interface_ip" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN radioworld_interface_ip VARCHAR(45)",
+                ),
+            )
 
         channel_columns = {
             row[1]
@@ -190,6 +196,7 @@ async def initialise_show_file(
                 radioworld_enabled=False,
                 radioworld_flash_enabled=False,
                 radioworld_hold_seconds=8,
+                radioworld_interface_ip=None,
             )
             session.add(settings_row)
             await session.flush()
@@ -437,7 +444,7 @@ async def update_settings(
             raise RuntimeError("Show settings have not been initialised")
 
         for field_name, value in changes.items():
-            if field_name in {"audio_input_device", "external_sync_midi_input_name"}:
+            if field_name in {"audio_input_device", "external_sync_midi_input_name", "radioworld_interface_ip"}:
                 value = _normalise_optional_text(value)
             setattr(settings_row, field_name, value)
 
@@ -470,6 +477,7 @@ def _serialise_showfile_settings(settings_row: SettingsRecord, active_scene: Sce
         "radioworld_enabled": settings_row.radioworld_enabled,
         "radioworld_flash_enabled": settings_row.radioworld_flash_enabled,
         "radioworld_hold_seconds": settings_row.radioworld_hold_seconds,
+        "radioworld_interface_ip": settings_row.radioworld_interface_ip,
     }
 
 
@@ -616,7 +624,7 @@ async def import_showfile(database: DatabaseManager, payload: dict[str, object])
         for field_name, value in settings_payload.items():
             if field_name == "active_scene_order_index":
                 continue
-            if field_name in {"audio_input_device", "external_sync_midi_input_name"}:
+            if field_name in {"audio_input_device", "external_sync_midi_input_name", "radioworld_interface_ip"}:
                 value = _normalise_optional_text(value)
             setattr(settings_row, field_name, value)
 

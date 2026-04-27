@@ -1,7 +1,10 @@
 import { fetchJson } from './client';
 import type {
   AudioInputDeviceResponse,
+  AudioAlertResponse,
   HealthResponse,
+  NetworkInterfaceResponse,
+  RadioWorldTestResponse,
   SettingsResponse,
   SettingsUpdateRequest,
 } from '../types/api';
@@ -23,4 +26,16 @@ export function updateSettings(payload: SettingsUpdateRequest): Promise<Settings
 
 export function listAudioInputDevices(): Promise<AudioInputDeviceResponse[]> {
   return fetchJson<AudioInputDeviceResponse[]>('/api/audio/devices');
+}
+
+export function listNetworkInterfaces(): Promise<NetworkInterfaceResponse[]> {
+  return fetchJson<NetworkInterfaceResponse[]>('/api/network/interfaces');
+}
+
+export function testAlerts(): Promise<AudioAlertResponse> {
+  return fetchJson<AudioAlertResponse>('/api/alerts/test', { method: 'POST' });
+}
+
+export function testRadioWorld(): Promise<RadioWorldTestResponse> {
+  return fetchJson<RadioWorldTestResponse>('/api/radioworld/test', { method: 'POST' });
 }

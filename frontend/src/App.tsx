@@ -7,13 +7,20 @@ import { getLatestMeters } from './api/meters';
 import { downloadShowfile, importShowfile } from './api/showfile';
 import { createChannel, deleteChannel, listChannels, updateChannel } from './api/channels';
 import { createScene, deleteScene, listScenes, updateScene } from './api/scenes';
-import { getHealth, getSettings, listAudioInputDevices, updateSettings } from './api/settings';
+import {
+  getHealth,
+  getSettings,
+  listAudioInputDevices,
+  listNetworkInterfaces,
+  testAlerts,
+  testRadioWorld,
+  updateSettings,
+} from './api/settings';
 import { getSyncStatus } from './api/sync';
 import { AlertToasts } from './components/AlertToasts';
 import { ChannelGrid } from './components/ChannelGrid';
 import { ChannelModal } from './components/ChannelModal';
 import { SetupView } from './components/SetupView';
-import { ShowSidebar } from './components/ShowSidebar';
 import { Toolbar } from './components/Toolbar';
 import { useAudioTransport } from './hooks/useAudioTransport';
 import { useMeters } from './hooks/useMeters';
@@ -192,6 +199,12 @@ function AppContent(): JSX.Element {
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
+  const networkInterfacesQuery = useQuery({
+    queryKey: ['networkInterfaces'],
+    queryFn: listNetworkInterfaces,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
   const activeAlertsQuery = useQuery({
     queryKey: ['activeAlerts'],
     queryFn: listActiveAlerts,
@@ -204,6 +217,7 @@ function AppContent(): JSX.Element {
   const settings = settingsQuery.data ?? null;
   const syncStatus = syncStatusQuery.data ?? null;
   const audioDevices = audioDevicesQuery.data ?? [];
+  const networkInterfaces = networkInterfacesQuery.data ?? [];
   const activeAlerts = settings?.alerts_enabled === false ? [] : (activeAlertsQuery.data ?? []);
 
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
@@ -747,6 +761,34 @@ function AppContent(): JSX.Element {
     }
   }, [dispatch, queryClient, setStatusText, syncListening]);
 
+  const handleTestAlerts = useCallback(async (): Promise<void> => {
+    try {
+      const alert = await testAlerts();
+      seenAlertIdsRef.current.add(alert.id);
+      setToastAlerts((currentAlerts) => [alert, ...currentAlerts.filter((currentAlert) => currentAlert.id !== alert.id)].slice(0, 4));
+      const popupDurationMs = Math.max(1, Number(settings?.alert_popup_duration_sec || 6)) * 1000;
+      const timeoutId = window.setTimeout(() => {
+        dismissToastAlert(alert.id);
+      }, popupDurationMs);
+      toastTimeoutsRef.current.set(alert.id, timeoutId);
+      await queryClient.invalidateQueries({ queryKey: ['activeAlerts'] });
+      setStatusText('Test alert sent');
+    } catch (error) {
+      console.error('Unable to test alerts', error);
+      setStatusText('Test alert failed');
+    }
+  }, [dismissToastAlert, queryClient, setStatusText, settings?.alert_popup_duration_sec]);
+
+  const handleTestRadioWorld = useCallback(async (): Promise<void> => {
+    try {
+      const result = await testRadioWorld();
+      setStatusText(`RadioWorld test sent from ${result.sender_ip}:${result.source_port}`);
+    } catch (error) {
+      console.error('Unable to test RadioWorld', error);
+      setStatusText('RadioWorld test failed');
+    }
+  }, [setStatusText]);
+
   const transportStatusText = getTransportStatusText(
     state.modalChannelId,
     state.selectedChannelIds,
@@ -812,19 +854,6 @@ function AppContent(): JSX.Element {
               onCloseModal={() => dispatch({ type: 'closeModal' })}
             />
           </div>
-
-          <ShowSidebar
-            channels={channels}
-            activeScene={activeScene}
-            checklist={sceneChecklist}
-            checkedCount={sceneChecklistStats.checked}
-            totalCount={sceneChecklistStats.total}
-            hidden={state.activeView !== 'show'}
-            onToggleChecklist={(channelId) => {
-              handleToggleChecklist(channelId);
-            }}
-            onResetChecklist={handleResetAllChecklists}
-          />
         </div>
 
         <section className="monitor-dock" aria-label="Channel inspector dock" ref={monitorDockRef}>
@@ -852,6 +881,7 @@ function AppContent(): JSX.Element {
         channels={channels}
         scenes={scenes}
         audioDevices={audioDevices}
+        networkInterfaces={networkInterfaces}
         activeSceneId={state.activeSceneId}
         onSetSetupTab={(tab) => dispatch({ type: 'setSetupTab', payload: tab })}
         onSaveSettings={handleSaveSettings}
@@ -864,8 +894,11 @@ function AppContent(): JSX.Element {
         onSaveSceneName={handleSaveSceneName}
         onSaveSceneAssignments={handleSaveSceneAssignments}
         onSaveSceneCueMapping={handleSaveSceneCueMapping}
+        onResetChecklist={handleResetAllChecklists}
         onExportShowfile={handleExportShowfile}
         onImportShowfile={handleImportShowfile}
+        onTestAlerts={handleTestAlerts}
+        onTestRadioWorld={handleTestRadioWorld}
       />
 
       <audio id="monitor-audio" className="sr-audio" autoPlay playsInline ref={audioElementRef}></audio>

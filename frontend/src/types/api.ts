@@ -29,6 +29,7 @@ export interface SettingsResponse {
   radioworld_enabled: boolean;
   radioworld_flash_enabled: boolean;
   radioworld_hold_seconds: number;
+  radioworld_interface_ip: string | null;
 }
 
 export interface SettingsUpdateRequest {
@@ -53,6 +54,23 @@ export interface SettingsUpdateRequest {
   radioworld_enabled?: boolean | null;
   radioworld_flash_enabled?: boolean | null;
   radioworld_hold_seconds?: number | null;
+  radioworld_interface_ip?: string | null;
+}
+
+export interface NetworkInterfaceResponse {
+  name: string;
+  display_name: string;
+  ipv4_address: string;
+  broadcast_address: string | null;
+  is_loopback: boolean;
+}
+
+export interface RadioWorldTestResponse {
+  status: string;
+  sender_ip: string;
+  source_port: number;
+  destinations: string[];
+  destination_port: number;
 }
 
 export interface AudioInputDeviceResponse {
@@ -228,6 +246,7 @@ export interface ShowfileSettingsPayload {
   radioworld_enabled: boolean;
   radioworld_flash_enabled: boolean;
   radioworld_hold_seconds: number;
+  radioworld_interface_ip: string | null;
 }
 
 export interface ShowfilePayload {
