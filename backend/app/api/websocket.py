@@ -25,7 +25,7 @@ class WebSocketManager:
 	async def broadcast(self, payload: dict[str, object]) -> None:
 		"""Broadcast a JSON payload to all currently connected clients."""
 		stale_connections: list[WebSocket] = []
-		for websocket in self._connections:
+		for websocket in tuple(self._connections):
 			try:
 				await websocket.send_json(payload)
 			except Exception:
@@ -46,4 +46,6 @@ async def meters_websocket(websocket: WebSocket) -> None:
 		while True:
 			await websocket.receive_text()
 	except WebSocketDisconnect:
+		pass
+	finally:
 		manager.disconnect(websocket)
