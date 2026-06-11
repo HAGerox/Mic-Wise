@@ -62,8 +62,7 @@ dependencies into a single artifact per platform:
 - **macOS**: `dist/MicWise.app` — copy it to the show computer and
   double-click it. The first launch on a new machine may need
   right-click → Open to pass Gatekeeper. Quit it like any app (Dock → Quit
-  or Cmd-Q); the server log is written to the data directory below. A
-  terminal-friendly copy also lands in `dist/MicWise/MicWise`.
+  or Cmd-Q); the server log is written to the data directory below.
 - **Windows**: `dist/MicWise.exe` — a single file. Double-click to run; a
   console window shows the server log, and closing it stops the server.
 - **Linux**: `dist/MicWise` — a single executable file.
@@ -71,6 +70,11 @@ dependencies into a single artifact per platform:
 In all cases the server starts and the operator UI opens in the default
 browser; other machines on the network can connect to
 `http://<host-ip>:8000/`.
+
+The build derives the native app icon from
+`packaging/assets/micwise-icon-source.png`, centre-cropping it to a square
+before embedding an `.icns` in the macOS app or an `.ico` in the Windows
+executable. Linux remains a single executable without a separate icon file.
 
 Standalone builds keep show files (and `micwise-server.log` for the macOS
 app) in the per-user data directory (`~/Library/Application

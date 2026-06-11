@@ -21,9 +21,23 @@ backend_root = project_root / "backend"
 frontend_dist = project_root / "frontend" / "dist"
 
 is_macos = sys.platform == "darwin"
+is_windows = sys.platform.startswith("win")
 # One-file is the friendliest hand-off on Windows/Linux; macOS gets a real
 # .app bundle instead (one-file and .app bundles are mutually exclusive).
 onefile = not is_macos
+icon = (
+    project_root / "build" / "icons" / "MicWise.icns"
+    if is_macos
+    else project_root / "build" / "icons" / "MicWise.ico"
+    if is_windows
+    else None
+)
+
+if icon is not None and not icon.exists():
+    raise SystemExit(
+        f"{icon} is missing - build with `python packaging/build.py` so the "
+        "platform icon is generated first.",
+    )
 
 if not (frontend_dist / "index.html").exists():
     raise SystemExit(
@@ -87,7 +101,7 @@ if onefile:
         strip=False,
         upx=False,
         console=True,
-        icon=None,
+        icon=str(icon) if icon else None,
     )
 else:
     exe = EXE(
@@ -101,7 +115,7 @@ else:
         strip=False,
         upx=False,
         console=False,
-        icon=None,
+        icon=str(icon),
     )
 
     coll = COLLECT(
@@ -116,7 +130,7 @@ else:
     app = BUNDLE(
         coll,
         name="MicWise.app",
-        icon=None,
+        icon=str(icon),
         bundle_identifier="com.micwise.server",
         info_plist={
             "CFBundleName": "MicWise",

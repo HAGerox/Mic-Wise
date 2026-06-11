@@ -91,6 +91,23 @@ def _run_macos_app(server) -> bool:
             shutdown_server()
             return AppKit.NSTerminateNow
 
+    def install_main_menu(application) -> None:
+        """Install the standard app menu, including the Cmd-Q key equivalent."""
+        main_menu = AppKit.NSMenu.alloc().init()
+        app_menu_item = AppKit.NSMenuItem.alloc().init()
+        main_menu.addItem_(app_menu_item)
+
+        app_menu = AppKit.NSMenu.alloc().initWithTitle_("MicWise")
+        quit_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Quit MicWise",
+            "terminate:",
+            "q",
+        )
+        quit_item.setTarget_(application)
+        app_menu.addItem_(quit_item)
+        app_menu_item.setSubmenu_(app_menu)
+        application.setMainMenu_(main_menu)
+
     def handle_sigterm(signum, frame) -> None:
         del signum, frame
         shutdown_server()
@@ -99,6 +116,8 @@ def _run_macos_app(server) -> bool:
     signal.signal(signal.SIGTERM, handle_sigterm)
 
     application = AppKit.NSApplication.sharedApplication()
+    application.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+    install_main_menu(application)
     delegate = MicWiseAppDelegate.alloc().init()
     application.setDelegate_(delegate)
     application.run()
