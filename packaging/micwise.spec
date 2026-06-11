@@ -48,8 +48,9 @@ if not (frontend_dist / "index.html").exists():
 hiddenimports = [
     # uvicorn's import-by-name internals
     *collect_submodules("uvicorn"),
-    # numpy 2.x lazy submodules that PyInstaller's hook can miss
-    *collect_submodules("numpy"),
+    # Python 3.14 currently needs the broad fallback; earlier versions use
+    # PyInstaller's NumPy hook and avoid scanning NumPy's large test tree.
+    *(collect_submodules("numpy") if sys.version_info >= (3, 14) else []),
     # stdlib lazy imports missed on Python 3.14
     *collect_submodules("ctypes"),
     *collect_submodules("encodings"),

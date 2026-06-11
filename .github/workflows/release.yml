@@ -1,0 +1,163 @@
+name: Build release apps
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.id }}
+  cancel-in-progress: false
+
+jobs:
+  frontend:
+    name: Build frontend once
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package frontend build
+        working-directory: .
+        run: tar -czf frontend-dist.tar.gz frontend/dist
+
+      - name: Store frontend build
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
+        with:
+          path: frontend-dist.tar.gz
+          archive: false
+          retention-days: 1
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: frontend
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS x64
+            runner: macos-15-intel
+          - name: Windows x64
+            runner: windows-latest
+          - name: Linux x64
+            runner: ubuntu-latest
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Download frontend build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: frontend-dist.tar.gz
+          skip-decompress: true
+
+      - name: Extract frontend build
+        shell: bash
+        run: tar -xzf frontend-dist.tar.gz
+
+      - name: Install Linux audio library
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libportaudio2
+
+      - name: Install Python build dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r backend/requirements.txt pyinstaller pillow
+
+      - name: Install macOS app dependency
+        if: runner.os == 'macOS'
+        run: python -m pip install pyobjc-framework-Cocoa
+
+      - name: Build standalone app
+        run: python packaging/build.py --skip-frontend
+
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          asset="MicWise-macOS-x64.zip"
+          ditto -c -k --sequesterRsrc --keepParent dist/MicWise.app "$asset"
+          echo "RELEASE_ASSET=$asset" >> "$GITHUB_ENV"
+
+      - name: Package Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $asset = "MicWise-Windows-x64.zip"
+          Compress-Archive -Path dist/MicWise.exe -DestinationPath $asset
+          "RELEASE_ASSET=$asset" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Package Linux app
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          asset="MicWise-Linux-x64.tar.gz"
+          tar -C dist -czf "$asset" MicWise
+          echo "RELEASE_ASSET=$asset" >> "$GITHUB_ENV"
+
+      - name: Store packaged app
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
+        with:
+          path: ${{ env.RELEASE_ASSET }}
+          archive: false
+          retention-days: 1
+
+  publish:
+    name: Attach apps to release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packaged apps
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: MicWise-*
+          path: release-assets
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Upload apps to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG_NAME" release-assets/* --clobber
