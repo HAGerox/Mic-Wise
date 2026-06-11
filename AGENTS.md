@@ -17,7 +17,7 @@
 
 - Route show-file mutations through `backend/app/database/repository.py` so migrations, normalization, ordering, and import/export semantics stay centralized.
 - Optional host integrations fail soft: audio device discovery, Zeroconf, OSC, MIDI, network interface discovery, and RadioWorld UDP should degrade to empty status/error info rather than breaking core monitoring.
-- RadioWorld follows the captured UDP protocol in `Radio World UDP Protocol Specification.md`: source/destination port `1090`, payload `RWSENDIP{sender_ip}#{command}`, duplicate command packets about 39 ms apart, `KEYP{text}`/`KEYP{text}\n`, `COMM0` flash, `COMM1` unflash, `COMM8` clear.
+- RadioWorld follows the captured UDP protocol in `docs/Radio World UDP Protocol Specification.md`: source/destination port `1090`, payload `RWSENDIP{sender_ip}#{command}`, duplicate command packets about 39 ms apart, `KEYP{text}`/`KEYP{text}\n`, `COMM0` flash, `COMM1` unflash, `COMM8` clear.
 - Audio input devices are persisted as stable `hostapi::device` selectors; `hardware` is only a UI/API alias that normalizes to `sounddevice`.
 - Scene sync matches normalized OSC/MIDI events against persisted scene cue fields and only changes `settings.active_scene_id`; it does not mutate frontend checklist state.
 

@@ -5,7 +5,6 @@ import { createWebRtcOffer } from '../api/streaming';
 import type { AudioInputSource } from '../types/ui';
 
 const AUDIO_CONTROL_CHANNEL_LABEL = 'micwise-control';
-const AUDIO_ELEMENT_FADE_SECONDS = 0.012;
 
 type PendingAudioCommand = {
   input_sources: AudioInputSource[];
@@ -86,7 +85,6 @@ export function useAudioTransport({
   const pendingAudioCommandRef = useRef<PendingAudioCommand | null>(null);
   const listenRequestTokenRef = useRef(0);
   const statusChangeRef = useRef(onStatusChange);
-  const fadeTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     statusChangeRef.current = onStatusChange;
@@ -95,27 +93,6 @@ export function useAudioTransport({
   const emitStatus = useCallback((statusText: string) => {
     statusChangeRef.current?.(statusText);
   }, []);
-
-  const clearPendingFade = useCallback(() => {
-    if (fadeTimeoutRef.current !== null) {
-      window.clearTimeout(fadeTimeoutRef.current);
-      fadeTimeoutRef.current = null;
-    }
-  }, []);
-
-  const primeAudioElementGain = useCallback(() => {
-    const audioElement = audioElementRef.current;
-    if (!audioElement) {
-      return;
-    }
-
-    clearPendingFade();
-    audioElement.volume = 0;
-    fadeTimeoutRef.current = window.setTimeout(() => {
-      audioElement.volume = 1;
-      fadeTimeoutRef.current = null;
-    }, AUDIO_ELEMENT_FADE_SECONDS * 1000);
-  }, [audioElementRef, clearPendingFade]);
 
   const flushPendingAudioCommand = useCallback(() => {
     if (!pendingAudioCommandRef.current || audioControlChannelRef.current?.readyState !== 'open') {
@@ -142,8 +119,6 @@ export function useAudioTransport({
       }
 
       if (audioElementRef.current) {
-        clearPendingFade();
-        audioElementRef.current.volume = 1;
         audioElementRef.current.srcObject = null;
       }
 
@@ -151,7 +126,7 @@ export function useAudioTransport({
         emitStatus('Online');
       }
     },
-    [audioElementRef, clearPendingFade, emitStatus],
+    [audioElementRef, emitStatus],
   );
 
   const ensureAudioTransport = useCallback(async (): Promise<RTCPeerConnection> => {
@@ -268,7 +243,6 @@ export function useAudioTransport({
 
       try {
         await sendSelection({ inputSources, replaySeconds });
-        primeAudioElementGain();
         void audioElementRef.current?.play().catch(() => {
           emitStatus('Audio ready');
         });
@@ -284,7 +258,7 @@ export function useAudioTransport({
         emitStatus('Audio connection failed');
       }
     },
-    [audioElementRef, emitStatus, primeAudioElementGain, sendSelection],
+    [audioElementRef, emitStatus, sendSelection],
   );
 
   useEffect(() => {
@@ -296,10 +270,6 @@ export function useAudioTransport({
       void closeAudioTransport({ preserveStatus: true });
     };
   }, [closeAudioTransport, ensureAudioTransport]);
-
-  useEffect(() => () => {
-    clearPendingFade();
-  }, [clearPendingFade]);
 
   return {
     syncSelection,

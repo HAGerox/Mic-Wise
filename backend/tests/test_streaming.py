@@ -263,7 +263,9 @@ def test_buffer_audio_stream_track_fades_playhead_jump_when_entering_replay(tmp_
 		duration_sec=2,
 		create=True,
 	) as writer:
-		writer.write(np.full((track_frame_count := 2_000, 1), 12_000, dtype=np.int16))
+		frames = np.full((4_000, 1), 12_000, dtype=np.int16)
+		frames[3_040:, 0] = -12_000
+		writer.write(frames)
 
 	track = BufferAudioStreamTrack(
 		buffer_path=str(buffer_path),
@@ -272,12 +274,58 @@ def test_buffer_audio_stream_track_fades_playhead_jump_when_entering_replay(tmp_
 		input_sources=[(0, 0.0)],
 	)
 	try:
-		track._last_output_sample = 12_000.0
 		track.update_selection(input_sources=[(0, 0.0)], replay_seconds=0.02)
-		chunk = np.zeros((track.samples_per_frame, 1), dtype=np.int16)
-		mixed = track._mix_selected_channels(chunk)
+		latest = track.buffer.refresh_write_head()
+		transition_chunk = track._read_transition_chunk(latest)
+		chunk = track._read_live_chunk(latest)
+		mixed = track._mix_selected_channels(chunk, transition_chunk=transition_chunk)
 
-		assert mixed[0] > mixed[min(track.fade_frames - 1, mixed.shape[0] - 1)]
+		assert transition_chunk is not None
+		assert np.all(transition_chunk[:, 0] == 12_000)
+		assert np.all(chunk[:, 0] == -12_000)
+		assert mixed[0] > 0
+		assert mixed[min(track.fade_frames - 1, mixed.shape[0] - 1)] < 0
+		assert mixed[track.fade_frames] == -12_000
+	finally:
+		track.stop()
+
+
+def test_buffer_audio_stream_track_fades_replay_audio_to_silence_when_clearing_selection(tmp_path) -> None:
+	buffer_path = tmp_path / "audio.buffer"
+
+	with AudioBuffer(
+		filename=str(buffer_path),
+		channels=1,
+		sample_rate=48_000,
+		duration_sec=2,
+		create=True,
+	) as writer:
+		frames = np.zeros((4_000, 1), dtype=np.int16)
+		frames[3_040:, 0] = 12_000
+		writer.write(frames)
+
+	track = BufferAudioStreamTrack(
+		buffer_path=str(buffer_path),
+		total_channels=1,
+		sample_rate=48_000,
+		input_sources=[(0, 0.0)],
+	)
+	try:
+		track.update_selection(input_sources=[(0, 0.0)], replay_seconds=0.02)
+		track._transition_from_state = None
+		track._transition_remaining_frames = 0
+
+		track.update_selection(input_sources=[], replay_seconds=0.0)
+		latest = track.buffer.refresh_write_head()
+		transition_chunk = track._read_transition_chunk(latest)
+		chunk = track._read_live_chunk(latest)
+		mixed = track._mix_selected_channels(chunk, transition_chunk=transition_chunk)
+
+		assert transition_chunk is not None
+		assert np.all(transition_chunk[:, 0] == 12_000)
+		assert np.all(chunk[:, 0] == 0)
+		assert mixed[0] > 0
+		assert mixed[min(track.fade_frames - 1, mixed.shape[0] - 1)] == 0
 		assert mixed[-1] == 0
 	finally:
 		track.stop()

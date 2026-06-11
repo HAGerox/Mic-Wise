@@ -6,6 +6,7 @@ import asyncio
 import fractions
 import json
 import time
+from dataclasses import dataclass
 
 import numpy as np
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
@@ -22,6 +23,15 @@ SELECTION_CROSSFADE_SECONDS = 0.01
 def db_to_linear_gain(gain_db: float) -> float:
 	"""Convert a gain value in decibels to a linear multiplier."""
 	return float(10 ** (gain_db / 20.0))
+
+
+@dataclass(slots=True)
+class StreamTransitionState:
+	"""Playback state captured before a selection or playhead jump."""
+
+	input_sources: list[tuple[int, float]]
+	read_head: int
+	playback_mode: str
 
 
 class BufferAudioStreamTrack(AudioStreamTrack):
@@ -44,24 +54,14 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		self.fade_frames = max(1, int(round(sample_rate * SELECTION_CROSSFADE_SECONDS)))
 		self.live_edge_frames = playback_sync_delay_frames(sample_rate)
 		self.input_sources: list[tuple[int, float]] = []
-		self._transition_from_sources: list[tuple[int, float]] = []
+		self._transition_from_state: StreamTransitionState | None = None
 		self._transition_remaining_frames = 0
-		self._playhead_transition_start_sample = 0.0
-		self._playhead_transition_remaining_frames = 0
-		self._last_output_sample = 0.0
 		self._playback_mode = "live"
 		self._read_head = 0
 		self.update_selection(input_sources=input_sources, replay_seconds=replay_seconds, reset_read_head=True)
-		self._transition_from_sources = []
+		self._transition_from_state = None
 		self._transition_remaining_frames = 0
-		self._playhead_transition_start_sample = 0.0
-		self._playhead_transition_remaining_frames = 0
 		self._buffer_closed = False
-
-	def _queue_playhead_transition(self) -> None:
-		"""Fade from the last rendered sample when the read head jumps."""
-		self._playhead_transition_start_sample = float(self._last_output_sample)
-		self._playhead_transition_remaining_frames = self.fade_frames
 
 	def _normalise_input_sources(
 		self,
@@ -87,24 +87,37 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 	) -> None:
 		"""Update the mixed input selection without rebuilding the WebRTC transport."""
 		normalised_sources = self._normalise_input_sources(input_sources)
-		if normalised_sources != self.input_sources:
-			self._transition_from_sources = list(self.input_sources)
-			self._transition_remaining_frames = self.fade_frames
-		self.input_sources = normalised_sources
+		previous_sources = list(self.input_sources)
+		previous_read_head = self._read_head
+		previous_mode = self._playback_mode
 		latest = self.buffer.refresh_write_head()
 		earliest = max(0, latest - self.buffer.capacity)
 		replay_frames = max(0, int(round(float(replay_seconds) * self.sample_rate)))
+		next_mode = "live"
+		next_read_head = previous_read_head
 
 		if replay_frames > 0:
-			self._queue_playhead_transition()
-			self._playback_mode = "replay"
-			self._read_head = max(earliest, latest - replay_frames)
-			return
+			next_mode = "replay"
+			next_read_head = max(earliest, latest - replay_frames)
+		else:
+			if reset_read_head or previous_mode != "live":
+				next_read_head = self._target_live_read_head(latest)
 
-		if reset_read_head or self._playback_mode != "live":
-			self._queue_playhead_transition()
-			self._read_head = self._target_live_read_head(latest)
-		self._playback_mode = "live"
+		if (
+			normalised_sources != previous_sources
+			or next_read_head != previous_read_head
+			or next_mode != previous_mode
+		):
+			self._transition_from_state = StreamTransitionState(
+				input_sources=previous_sources,
+				read_head=previous_read_head,
+				playback_mode=previous_mode,
+			)
+			self._transition_remaining_frames = self.fade_frames
+
+		self.input_sources = normalised_sources
+		self._playback_mode = next_mode
+		self._read_head = next_read_head
 
 	def _mix_sources(self, chunk: np.ndarray, input_sources: list[tuple[int, float]]) -> np.ndarray:
 		"""Mix a specific set of input sources down to mono."""
@@ -127,30 +140,46 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		earliest = max(0, latest - self.buffer.capacity)
 		return max(earliest, latest - self.live_edge_frames)
 
-	def _read_live_chunk(self, latest: int) -> np.ndarray:
-		"""Read a full frame from the buffer, recovering cleanly from underruns."""
+	def _read_chunk_at_head(self, read_head: int, latest: int) -> tuple[np.ndarray, int]:
+		"""Read a full frame from an arbitrary head, recovering cleanly from underruns."""
 		earliest = max(0, latest - self.buffer.capacity)
 		target_read_head = self._target_live_read_head(latest)
 
-		if self._read_head < earliest:
-			self._read_head = target_read_head
-		elif self._read_head + self.samples_per_frame > latest:
-			self._read_head = target_read_head
+		if read_head < earliest:
+			read_head = target_read_head
+		elif read_head + self.samples_per_frame > latest:
+			read_head = target_read_head
 
-		chunk = self.buffer.read(self._read_head, self.samples_per_frame)
+		chunk = self.buffer.read(read_head, self.samples_per_frame)
 		if chunk.shape[0] < self.samples_per_frame and latest > 0:
-			self._read_head = target_read_head
-			chunk = self.buffer.read(self._read_head, self.samples_per_frame)
+			read_head = target_read_head
+			chunk = self.buffer.read(read_head, self.samples_per_frame)
 
-		self._read_head += self.samples_per_frame
+		next_read_head = read_head + self.samples_per_frame
 		if chunk.shape[0] >= self.samples_per_frame:
-			return chunk
+			return chunk, next_read_head
 
 		if chunk.shape[0] == 0:
-			return np.zeros((self.samples_per_frame, self.total_channels), dtype=np.int16)
+			return np.zeros((self.samples_per_frame, self.total_channels), dtype=np.int16), next_read_head
 
 		padding = np.repeat(chunk[-1:, :], self.samples_per_frame - chunk.shape[0], axis=0)
-		return np.concatenate((chunk, padding), axis=0)
+		return np.concatenate((chunk, padding), axis=0), next_read_head
+
+	def _read_live_chunk(self, latest: int) -> np.ndarray:
+		"""Read the current output frame and advance the active stream head."""
+		chunk, self._read_head = self._read_chunk_at_head(self._read_head, latest)
+		return chunk
+
+	def _read_transition_chunk(self, latest: int) -> np.ndarray | None:
+		"""Read the preserved pre-change frame while a transition crossfade is active."""
+		if self._transition_from_state is None:
+			return None
+
+		chunk, self._transition_from_state.read_head = self._read_chunk_at_head(
+			self._transition_from_state.read_head,
+			latest,
+		)
+		return chunk
 
 	async def recv(self) -> AudioFrame:
 		"""Produce the next audio frame for transmission."""
@@ -166,9 +195,10 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 			self._timestamp = 0
 
 		latest = self.buffer.refresh_write_head()
+		transition_chunk = self._read_transition_chunk(latest)
 		chunk = self._read_live_chunk(latest)
 
-		mono = self._mix_selected_channels(chunk)
+		mono = self._mix_selected_channels(chunk, transition_chunk=transition_chunk)
 		frame = AudioFrame(format="s16", layout="mono", samples=self.samples_per_frame)
 		frame.planes[0].update(mono.tobytes())
 		frame.pts = self._timestamp
@@ -176,11 +206,16 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 		frame.time_base = fractions.Fraction(1, self.sample_rate)
 		return frame
 
-	def _mix_selected_channels(self, chunk: np.ndarray) -> np.ndarray:
+	def _mix_selected_channels(
+		self,
+		chunk: np.ndarray,
+		transition_chunk: np.ndarray | None = None,
+	) -> np.ndarray:
 		"""Mix the selected input channels down to a mono program stream."""
 		target_mono = self._mix_sources(chunk, self.input_sources)
-		if self._transition_remaining_frames > 0:
-			source_mono = self._mix_sources(chunk, self._transition_from_sources)
+		if self._transition_remaining_frames > 0 and self._transition_from_state is not None:
+			source_chunk = transition_chunk if transition_chunk is not None else chunk
+			source_mono = self._mix_sources(source_chunk, self._transition_from_state.input_sources)
 			fade_frames = min(chunk.shape[0], self._transition_remaining_frames)
 			fade_start = self.fade_frames - self._transition_remaining_frames
 			fade_curve = np.clip(
@@ -197,30 +232,8 @@ class BufferAudioStreamTrack(AudioStreamTrack):
 
 			self._transition_remaining_frames -= fade_frames
 			if self._transition_remaining_frames <= 0:
-				self._transition_from_sources = []
+				self._transition_from_state = None
 			target_mono = np.clip(np.round(mixed), -32_768, 32_767).astype(np.int16)
-
-		if self._playhead_transition_remaining_frames > 0:
-			fade_frames = min(chunk.shape[0], self._playhead_transition_remaining_frames)
-			fade_start = self.fade_frames - self._playhead_transition_remaining_frames
-			fade_curve = np.clip(
-				(np.arange(fade_frames, dtype=np.float32) + fade_start + 1) / max(self.fade_frames, 1),
-				0.0,
-				1.0,
-			)
-
-			mixed = target_mono.astype(np.float32)
-			mixed[:fade_frames] = (
-				self._playhead_transition_start_sample * (1.0 - fade_curve)
-				+ mixed[:fade_frames] * fade_curve
-			)
-			target_mono = np.clip(np.round(mixed), -32_768, 32_767).astype(np.int16)
-
-			self._playhead_transition_remaining_frames -= fade_frames
-			if self._playhead_transition_remaining_frames <= 0:
-				self._playhead_transition_start_sample = 0.0
-
-		self._last_output_sample = float(target_mono[-1]) if target_mono.size > 0 else 0.0
 		return target_mono
 
 	def stop(self) -> None:
