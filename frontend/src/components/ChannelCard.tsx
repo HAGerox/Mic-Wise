@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 
+import { formatDbfs } from '../lib/format';
 import type { ChannelCardState } from '../types/ui';
 
 const LONG_PRESS_MS = 420;
@@ -146,7 +147,11 @@ function ChannelCardComponent({
             <div className="channel-meta-copy">
               {activeAlert ? (
                 <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
-              ) : null}
+              ) : (
+                <span className="channel-peak-readout" aria-label="Peak level">
+                  {formatDbfs(metrics.peakDbfs)}
+                </span>
+              )}
             </div>
             {getBadgeMarkup(visualState)}
           </div>
