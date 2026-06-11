@@ -1,0 +1,88 @@
+# PyInstaller spec for the standalone Mic-Wise server.
+#
+# Build with:  python packaging/build.py        (recommended; builds frontend too)
+# or directly: pyinstaller packaging/micwise.spec --noconfirm
+#
+# Produces a one-folder app in dist/MicWise/ containing the backend, the
+# built frontend, and all native dependencies (PortAudio, PyAV/FFmpeg, ...).
+
+import sysconfig
+from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_submodules
+
+project_root = Path(SPECPATH).resolve().parent
+backend_root = project_root / "backend"
+frontend_dist = project_root / "frontend" / "dist"
+
+if not (frontend_dist / "index.html").exists():
+    raise SystemExit(
+        "frontend/dist/index.html is missing - run `npm run build` in frontend/ "
+        "or use packaging/build.py which does it for you.",
+    )
+
+hiddenimports = [
+    # uvicorn's import-by-name internals
+    *collect_submodules("uvicorn"),
+    # numpy 2.x lazy submodules that PyInstaller's hook can miss
+    *collect_submodules("numpy"),
+    # stdlib lazy imports missed on Python 3.14
+    *collect_submodules("ctypes"),
+    *collect_submodules("encodings"),
+    # PyAV/aiortc cython modules import each other by name at init time
+    *collect_submodules("av"),
+    *collect_submodules("aiortc"),
+    # sqlalchemy loads dialects via entry-point-style plugin names
+    *collect_submodules("sqlalchemy.dialects"),
+    # anyio picks its asyncio backend by string at runtime (StaticFiles)
+    *collect_submodules("anyio"),
+    # optional integrations imported lazily / by plugin name
+    "mido.backends.rtmidi",
+    "zeroconf",
+    "ifaddr",
+    "aiosqlite",
+    "greenlet",
+]
+
+# zoneinfo (pulled in via pydantic) needs the platform sysconfig data module,
+# which PyInstaller does not always collect on its own.
+_sysconfigdata_name = getattr(sysconfig, "_get_sysconfigdata_name", lambda: None)()
+if _sysconfigdata_name:
+    hiddenimports.append(_sysconfigdata_name)
+
+a = Analysis(
+    [str(project_root / "packaging" / "micwise_app.py")],
+    pathex=[str(backend_root)],
+    binaries=[],
+    datas=[(str(frontend_dist), "frontend/dist")],
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=["tkinter", "pytest"],
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="MicWise",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    icon=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="MicWise",
+)

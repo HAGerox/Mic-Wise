@@ -45,6 +45,32 @@ Then open the browser UI at:
 http://127.0.0.1:8000/
 ```
 
+## Standalone app builds
+
+For show computers you can build a self-contained app that needs no Python or
+Node install. On the platform you are targeting (PyInstaller does not
+cross-compile, so build on macOS for macOS, Windows for Windows, Linux for
+Linux), run:
+
+```text
+python packaging/build.py
+```
+
+This builds the frontend, then bundles the backend, the UI, and all native
+dependencies into `dist/MicWise/`. Copy (or zip and copy) that folder to the
+show computer and run `MicWise` (`MicWise.exe` on Windows) inside it. The
+server starts and the operator UI opens in the default browser; other
+machines on the network can connect to `http://<host-ip>:8000/`.
+
+Standalone builds keep show files in the per-user data directory
+(`~/Library/Application Support/Mic-Wise` on macOS, `%APPDATA%\Mic-Wise` on
+Windows, `~/.local/share/Mic-Wise` on Linux) instead of `backend/data`. All
+`MICWISE_*` environment variables still apply, e.g. `MICWISE_PORT=9000` or
+`MICWISE_NO_BROWSER=1`.
+
+The source-checkout workflow above is unchanged and remains the development
+path.
+
 ## Default runtime behaviour
 
 On a clean first run, the current backend defaults are:

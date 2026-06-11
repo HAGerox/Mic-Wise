@@ -2,11 +2,38 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from tempfile import gettempdir
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def is_frozen_app() -> bool:
+    """Return whether the backend runs from a frozen (PyInstaller) bundle."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def default_data_directory() -> Path:
+    """Return the persistent show-data directory.
+
+    Source checkouts keep show files under ``backend/data`` as before. Frozen
+    standalone builds must not write next to the bundled (read-only and
+    possibly temporary) application files, so they use the platform user-data
+    location instead.
+    """
+    if not is_frozen_app():
+        return Path(__file__).resolve().parents[2] / "data"
+
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    elif os.name == "nt":
+        base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
+    return base / "Mic-Wise"
 
 
 def default_runtime_directory() -> Path:
@@ -25,9 +52,7 @@ class MicWiseSettings(BaseSettings):
 
     host: str = "0.0.0.0"
     port: int = 8000
-    data_directory: Path = Field(
-        default_factory=lambda: Path(__file__).resolve().parents[2] / "data",
-    )
+    data_directory: Path = Field(default_factory=default_data_directory)
     runtime_directory: Path = Field(default_factory=default_runtime_directory)
     show_filename: str = "default.micwise"
     buffer_filename: str = "audio.buffer"
