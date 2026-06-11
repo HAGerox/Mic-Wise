@@ -18,8 +18,8 @@ frontend/node_modules/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -141,6 +141,9 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.template
 .envrc
 .venv
 env/
@@ -149,13 +152,25 @@ ENV/
 env.bak/
 venv.bak/
 
+# Local credentials and signing material
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+
 # Generated Mic-Wise local show/runtime data
 .micwise-dev/
-backend/data/*.buffer
-backend/data/*.micwise
+backend/data/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+
+# Local editor and assistant state
+.claude/
+.idea/
+.vscode/
 
 # Spyder project settings
 .spyderproject
