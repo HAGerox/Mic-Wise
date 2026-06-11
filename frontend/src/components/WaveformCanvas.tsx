@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { MODAL_WAVEFORM_WINDOW_SECONDS } from '../hooks/useWaveform';
 import { buildWaveformRulerMarks } from '../lib/ui-logic';
@@ -70,6 +70,22 @@ export function WaveformCanvas({
   onScrub,
 }: WaveformCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [resizeTick, setResizeTick] = useState(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      setResizeTick((tick) => tick + 1);
+    });
+    resizeObserver.observe(canvas);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -152,7 +168,7 @@ export function WaveformCanvas({
       context.fillStyle = '#f97316';
       context.fillRect(markerX - 3, 8, 6, 6);
     }
-  }, [displayPoints, scrubSeconds, waveform]);
+  }, [displayPoints, resizeTick, scrubSeconds, waveform]);
 
   return (
     <canvas

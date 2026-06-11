@@ -11,7 +11,7 @@ from app.api.websocket import WebSocketManager
 from app.audio.alerts import AlertAnalysisService
 from app.audio.analysis import MeterAnalysisService
 from app.audio.buffer import AudioBuffer
-from app.audio.engine import AudioEngineConfig, AudioEngineProcess
+from app.audio.engine import AudioEngineConfig, AudioEngineProcess, create_engine_stop_event
 from app.audio.playback import playback_sync_delay_frames
 from app.core.settings import MicWiseSettings
 from app.streaming.webrtc import WebRTCStreamManager
@@ -45,7 +45,7 @@ async def start_audio_runtime(
     ):
         pass
 
-    stop_event = mp.Event()
+    stop_event = create_engine_stop_event()
     audio_process = AudioEngineProcess(
         AudioEngineConfig(
             buffer_path=str(settings.buffer_path),

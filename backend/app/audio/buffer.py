@@ -104,6 +104,9 @@ class AudioBuffer:
             access = mmap.ACCESS_WRITE if writable else mmap.ACCESS_READ
             open_mode = os.O_RDWR if writable else os.O_RDONLY
 
+        # Windows fds default to text mode; PCM data must stay binary.
+        open_mode |= getattr(os, "O_BINARY", 0)
+
         self.fd = os.open(os.fspath(self.path), open_mode)
         self.mm = mmap.mmap(self.fd, 0, access=access)
 

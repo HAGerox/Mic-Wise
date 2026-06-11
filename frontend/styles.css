@@ -631,31 +631,40 @@ body.monitor-view-active .monitor-dock {
   z-index: 18;
 }
 
-.monitor-dock-panel,
-.monitor-dock-empty {
+.monitor-dock-panel {
   min-height: var(--monitor-dock-panel-height);
   height: var(--monitor-dock-panel-height);
   max-height: var(--monitor-dock-panel-height);
   overflow: hidden;
 }
 
+/* Collapsed hint bar: the inspector only claims dock height while a channel
+   is selected; the measured --monitor-dock-height keeps grid padding in sync. */
 .monitor-dock-empty {
-  display: grid;
-  gap: 6px;
-  align-content: center;
-  padding: 16px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 10px 16px;
+  overflow: hidden;
 }
 
 .monitor-dock-empty strong {
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 590;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .monitor-dock-empty span {
   color: var(--text-muted);
-  max-width: 64ch;
+  font-size: 13px;
+  max-width: 72ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .channel-card {
@@ -1002,6 +1011,14 @@ body.monitor-view-active .monitor-dock {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.channel-peak-readout {
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .channel-alert-badge.is-warning {

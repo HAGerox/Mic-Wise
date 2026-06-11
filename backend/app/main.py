@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -72,16 +73,31 @@ async def lifespan(app: FastAPI):
 		await database.dispose()
 
 
+def _frontend_directory() -> Path | None:
+	"""Locate the built frontend for both source checkouts and frozen builds."""
+	candidates: list[Path] = []
+	if getattr(sys, "frozen", False):
+		bundle_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+		candidates.append(bundle_root / "frontend" / "dist")
+		candidates.append(Path(sys.executable).parent / "frontend" / "dist")
+
+	frontend_root = Path(__file__).resolve().parents[2] / "frontend"
+	candidates.append(frontend_root / "dist")
+	candidates.append(frontend_root)
+
+	for candidate in candidates:
+		if (candidate / "index.html").exists():
+			return candidate
+	return None
+
+
 def create_app() -> FastAPI:
 	"""Create and configure the FastAPI application."""
 	app = FastAPI(title="Mic-Wise Backend", lifespan=lifespan)
 	app.include_router(api_router, prefix="/api")
 	app.include_router(websocket_router)
-	frontend_root = Path(__file__).resolve().parents[2] / "frontend"
-	frontend_directory = frontend_root / "dist"
-	if not (frontend_directory / "index.html").exists():
-		frontend_directory = frontend_root
-	if frontend_directory.exists():
+	frontend_directory = _frontend_directory()
+	if frontend_directory is not None:
 		app.mount(
 			"/",
 			StaticFiles(directory=str(frontend_directory), html=True),
