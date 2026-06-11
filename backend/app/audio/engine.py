@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import multiprocessing as mp
+import sys
 import time
+import traceback
 from dataclasses import dataclass
 
 import numpy as np
@@ -15,6 +17,17 @@ import sounddevice as sd
 
 from app.audio.buffer import AudioBuffer
 from app.audio.devices import resolve_input_device
+
+# The engine always uses the spawn start method so behaviour is identical on
+# macOS, Windows, and Linux. Forking the FastAPI parent (Linux default) would
+# duplicate its asyncio loop, sqlite handles, and PortAudio state into the
+# audio child.
+SPAWN_CONTEXT = mp.get_context("spawn")
+
+
+def create_engine_stop_event() -> mp.Event:
+	"""Create a stop event compatible with the engine's spawn context."""
+	return SPAWN_CONTEXT.Event()
 
 
 @dataclass(slots=True)
@@ -33,7 +46,7 @@ class AudioEngineConfig:
 	synthetic_amplitude: int = 12_000
 
 
-class AudioEngineProcess(mp.Process):
+class AudioEngineProcess(SPAWN_CONTEXT.Process):
 	"""Background process writing audio into the rolling buffer."""
 
 	def __init__(self, config: AudioEngineConfig, stop_event: mp.Event) -> None:
@@ -43,17 +56,28 @@ class AudioEngineProcess(mp.Process):
 
 	def run(self) -> None:
 		"""Start the configured audio source loop."""
-		with AudioBuffer(self.config.buffer_path, writable=True) as buffer:
-			if self.config.source_mode == "synthetic":
-				self._run_synthetic(buffer)
-				return
-			if self.config.source_mode in {"sounddevice", "hardware"}:
-				self._run_sounddevice(buffer)
-				return
+		try:
+			with AudioBuffer(self.config.buffer_path, writable=True) as buffer:
+				if self.config.source_mode == "synthetic":
+					self._run_synthetic(buffer)
+					return
+				if self.config.source_mode in {"sounddevice", "hardware"}:
+					self._run_sounddevice(buffer)
+					return
 
-			raise ValueError(
-				f"Unsupported audio source mode: {self.config.source_mode}",
+				raise ValueError(
+					f"Unsupported audio source mode: {self.config.source_mode}",
+				)
+		except Exception:
+			# A dead engine is surfaced via /api/health; make the cause visible
+			# in the server log instead of dying silently.
+			print(
+				f"Audio engine failed (source_mode={self.config.source_mode}, "
+				f"input_device={self.config.input_device!r}):",
+				file=sys.stderr,
 			)
+			traceback.print_exc()
+			raise
 
 	def _wait_for_next_block(self, next_deadline: float, block_duration: float) -> float | None:
 		"""Wait until the next synthetic block deadline without accumulating drift."""

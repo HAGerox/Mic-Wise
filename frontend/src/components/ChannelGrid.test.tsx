@@ -93,8 +93,8 @@ describe('ChannelGrid layout ordering', () => {
       />,
     );
 
-    expect(screen.getByText('CH 01')).toBeInTheDocument();
-    expect(screen.getByText('CH 02')).toBeInTheDocument();
+    expect(screen.getByText('Channel 1')).toBeInTheDocument();
+    expect(screen.getByText('Channel 2')).toBeInTheDocument();
 
     await sortableMock.options?.onEnd?.({ to: container.querySelector('#channel-grid') as HTMLElement });
 
