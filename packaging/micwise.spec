@@ -71,9 +71,10 @@ hiddenimports = [
 
 # zoneinfo (pulled in via pydantic) needs the platform sysconfig data module,
 # which PyInstaller does not always collect on its own.
-_sysconfigdata_name = getattr(sysconfig, "_get_sysconfigdata_name", lambda: None)()
-if _sysconfigdata_name:
-    hiddenimports.append(_sysconfigdata_name)
+if not is_windows:
+    _sysconfigdata_name = getattr(sysconfig, "_get_sysconfigdata_name", lambda: None)()
+    if _sysconfigdata_name:
+        hiddenimports.append(_sysconfigdata_name)
 
 a = Analysis(
     [str(project_root / "packaging" / "micwise_app.py")],
