@@ -53,9 +53,22 @@ class AudioEngineProcess(SPAWN_CONTEXT.Process):
 		super().__init__(name="micwise-audio-engine", daemon=True)
 		self.config = config
 		self.stop_event = stop_event
+		self._engine_parent_pid: int | None = None
+
+	def _should_stop(self) -> bool:
+		"""Check the stop event plus orphan protection.
+
+		Daemonic children are only reaped by the parent's normal exit path; if
+		the parent is force-killed the engine would keep running forever. On
+		POSIX a dead parent changes our ppid, so treat that as a stop signal.
+		"""
+		if self.stop_event.is_set():
+			return True
+		return self._engine_parent_pid is not None and os.getppid() != self._engine_parent_pid
 
 	def run(self) -> None:
 		"""Start the configured audio source loop."""
+		self._engine_parent_pid = os.getppid()
 		try:
 			with AudioBuffer(self.config.buffer_path, writable=True) as buffer:
 				if self.config.source_mode == "synthetic":
@@ -106,7 +119,7 @@ class AudioEngineProcess(SPAWN_CONTEXT.Process):
 		block_duration = self.config.block_size / self.config.sample_rate
 		next_deadline = time.perf_counter()
 
-		while not self.stop_event.is_set():
+		while not self._should_stop():
 			tone = np.sin(phase[None, :] + frame_index * phase_step[None, :])
 			amplitude_envelope = 0.2 + 0.8 * (
 				(np.sin(amplitude_lfo_phase[None, :] + frame_index * amplitude_lfo_step[None, :]) + 1.0)
@@ -162,4 +175,5 @@ class AudioEngineProcess(SPAWN_CONTEXT.Process):
 			callback=callback,
 		):
 			while not self.stop_event.wait(0.25):
-				pass
+				if self._should_stop():
+					break

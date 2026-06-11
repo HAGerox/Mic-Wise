@@ -3,9 +3,14 @@
 # Build with:  python packaging/build.py        (recommended; builds frontend too)
 # or directly: pyinstaller packaging/micwise.spec --noconfirm
 #
-# Produces a one-folder app in dist/MicWise/ containing the backend, the
-# built frontend, and all native dependencies (PortAudio, PyAV/FFmpeg, ...).
+# Per-platform output:
+#   macOS    -> dist/MicWise.app (double-clickable bundle; server logs go to
+#               the per-user data directory) plus dist/MicWise/ for terminal use
+#   Windows  -> dist/MicWise.exe (single file; shows a console with the logs,
+#               closing the console stops the server)
+#   Linux    -> dist/MicWise (single executable file)
 
+import sys
 import sysconfig
 from pathlib import Path
 
@@ -14,6 +19,11 @@ from PyInstaller.utils.hooks import collect_submodules
 project_root = Path(SPECPATH).resolve().parent
 backend_root = project_root / "backend"
 frontend_dist = project_root / "frontend" / "dist"
+
+is_macos = sys.platform == "darwin"
+# One-file is the friendliest hand-off on Windows/Linux; macOS gets a real
+# .app bundle instead (one-file and .app bundles are mutually exclusive).
+onefile = not is_macos
 
 if not (frontend_dist / "index.html").exists():
     raise SystemExit(
@@ -64,25 +74,60 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name="MicWise",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    console=True,
-    icon=None,
-)
+if onefile:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name="MicWise",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=True,
+        icon=None,
+    )
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name="MicWise",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        icon=None,
+    )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    name="MicWise",
-)
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=False,
+        name="MicWise",
+    )
+
+    app = BUNDLE(
+        coll,
+        name="MicWise.app",
+        icon=None,
+        bundle_identifier="com.micwise.server",
+        info_plist={
+            "CFBundleName": "MicWise",
+            "CFBundleDisplayName": "Mic-Wise",
+            "CFBundleShortVersionString": "0.1.0",
+            "NSHighResolutionCapable": True,
+            # Required for CoreAudio input capture from a bundled app;
+            # without it macOS refuses the microphone permission prompt.
+            "NSMicrophoneUsageDescription": (
+                "Mic-Wise monitors audio interface inputs for live metering "
+                "and listening."
+            ),
+        },
+    )

@@ -5,10 +5,10 @@ Usage:
     python packaging/build.py --skip-frontend
 
 Run it on the platform you are targeting (PyInstaller does not cross-compile):
-macOS produces dist/MicWise for macOS, Windows for Windows, Linux for Linux.
-The result is a self-contained folder: copy it to the show computer (or zip
-it), then run MicWise (MicWise.exe on Windows). The server starts, and the
-operator UI opens in the default browser.
+macOS produces ``dist/MicWise.app``, Windows produces ``dist/MicWise.exe``,
+and Linux produces ``dist/MicWise``. Copy the artifact to the show computer
+and run it. The server starts, and the operator UI opens in the default
+browser.
 """
 
 from __future__ import annotations
@@ -43,6 +43,16 @@ def ensure_pyinstaller() -> None:
     except ImportError:
         run([sys.executable, "-m", "pip", "install", "pyinstaller"], cwd=PROJECT_ROOT)
 
+    if sys.platform == "darwin":
+        # The .app needs a Cocoa event loop so Dock > Quit / Cmd-Q work.
+        try:
+            import AppKit  # noqa: F401
+        except ImportError:
+            run(
+                [sys.executable, "-m", "pip", "install", "pyobjc-framework-Cocoa"],
+                cwd=PROJECT_ROOT,
+            )
+
 
 def build_app() -> None:
     ensure_pyinstaller()
@@ -75,10 +85,20 @@ def main() -> None:
         build_frontend()
     build_app()
 
-    app_dir = PROJECT_ROOT / "dist" / "MicWise"
+    dist = PROJECT_ROOT / "dist"
     print()
-    print(f"Done. Standalone app: {app_dir}")
-    print("Copy that folder to the show computer and run MicWise inside it.")
+    if sys.platform == "darwin":
+        print(f"Done. macOS app bundle: {dist / 'MicWise.app'}")
+        print("Copy MicWise.app to the show computer and double-click it.")
+        print("(First launch on a new machine: right-click > Open to pass Gatekeeper.)")
+        print(f"Terminal-friendly build also available: {dist / 'MicWise' / 'MicWise'}")
+    elif sys.platform.startswith("win"):
+        print(f"Done. Single-file app: {dist / 'MicWise.exe'}")
+        print("Copy MicWise.exe to the show computer and double-click it.")
+        print("Closing its console window stops the server.")
+    else:
+        print(f"Done. Single-file app: {dist / 'MicWise'}")
+        print("Copy the MicWise file to the show computer and run it.")
 
 
 if __name__ == "__main__":

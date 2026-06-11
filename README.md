@@ -57,14 +57,25 @@ python packaging/build.py
 ```
 
 This builds the frontend, then bundles the backend, the UI, and all native
-dependencies into `dist/MicWise/`. Copy (or zip and copy) that folder to the
-show computer and run `MicWise` (`MicWise.exe` on Windows) inside it. The
-server starts and the operator UI opens in the default browser; other
-machines on the network can connect to `http://<host-ip>:8000/`.
+dependencies into a single artifact per platform:
 
-Standalone builds keep show files in the per-user data directory
-(`~/Library/Application Support/Mic-Wise` on macOS, `%APPDATA%\Mic-Wise` on
-Windows, `~/.local/share/Mic-Wise` on Linux) instead of `backend/data`. All
+- **macOS**: `dist/MicWise.app` — copy it to the show computer and
+  double-click it. The first launch on a new machine may need
+  right-click → Open to pass Gatekeeper. Quit it like any app (Dock → Quit
+  or Cmd-Q); the server log is written to the data directory below. A
+  terminal-friendly copy also lands in `dist/MicWise/MicWise`.
+- **Windows**: `dist/MicWise.exe` — a single file. Double-click to run; a
+  console window shows the server log, and closing it stops the server.
+- **Linux**: `dist/MicWise` — a single executable file.
+
+In all cases the server starts and the operator UI opens in the default
+browser; other machines on the network can connect to
+`http://<host-ip>:8000/`.
+
+Standalone builds keep show files (and `micwise-server.log` for the macOS
+app) in the per-user data directory (`~/Library/Application
+Support/Mic-Wise` on macOS, `%APPDATA%\Mic-Wise` on Windows,
+`~/.local/share/Mic-Wise` on Linux) instead of `backend/data`. All
 `MICWISE_*` environment variables still apply, e.g. `MICWISE_PORT=9000` or
 `MICWISE_NO_BROWSER=1`.
 
