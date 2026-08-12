@@ -49,6 +49,7 @@ That means any architecture notes that talk about the frontend as a single stati
 - SQLite show file for settings, channels, and scenes
 - optional Zeroconf service discovery
 - optional OSC / MIDI scene sync runtime via `backend/app/sync/service.py`
+- optional RChat UDP alert delivery via `backend/app/network/rchat.py`
 
 ## 4. Runtime architecture
 
@@ -77,6 +78,7 @@ Mic-Wise currently runs as one backend service with a clear internal runtime spl
   - host REST and WebSocket APIs
   - host the WebRTC stream manager
   - optionally start Zeroconf discovery and scene sync services
+  - send optional alert notifications to RChat over local UDP broadcast
 
 ### D. Database layer
 

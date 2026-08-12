@@ -16,6 +16,7 @@ The current repository is a Python backend plus a React + Vite + TypeScript fron
 - waveform preview and scrub-back listening for the last five minutes
 - optional Zeroconf discovery
 - optional OSC / MIDI scene sync runtime in `backend/app/sync/service.py`
+- optional RChat UDP alert notifications with configurable sender name and network interface
 
 ## Runtime architecture
 
@@ -123,6 +124,7 @@ That last point is intentional: the SQLite show file lives under the persistent 
 - creates, reorders, and edits scenes
 - maps scene cues to OSC and/or MIDI patterns
 - configures optional external scene sync settings
+- configures optional RChat alert delivery, flash/hold behaviour, display name, and network interface
 
 ## Configuration
 

@@ -26,10 +26,11 @@ export interface SettingsResponse {
   external_sync_midi_input_name: string | null;
   alerts_enabled: boolean;
   alert_popup_duration_sec: number;
-  radioworld_enabled: boolean;
-  radioworld_flash_enabled: boolean;
-  radioworld_hold_seconds: number;
-  radioworld_interface_ip: string | null;
+  rchat_enabled: boolean;
+  rchat_flash_enabled: boolean;
+  rchat_hold_seconds: number;
+  rchat_interface_ip: string | null;
+  rchat_username: string;
 }
 
 export interface SettingsUpdateRequest {
@@ -51,10 +52,11 @@ export interface SettingsUpdateRequest {
   external_sync_midi_input_name?: string | null;
   alerts_enabled?: boolean | null;
   alert_popup_duration_sec?: number | null;
-  radioworld_enabled?: boolean | null;
-  radioworld_flash_enabled?: boolean | null;
-  radioworld_hold_seconds?: number | null;
-  radioworld_interface_ip?: string | null;
+  rchat_enabled?: boolean | null;
+  rchat_flash_enabled?: boolean | null;
+  rchat_hold_seconds?: number | null;
+  rchat_interface_ip?: string | null;
+  rchat_username?: string | null;
 }
 
 export interface NetworkInterfaceResponse {
@@ -65,12 +67,14 @@ export interface NetworkInterfaceResponse {
   is_loopback: boolean;
 }
 
-export interface RadioWorldTestResponse {
+export interface RChatTestResponse {
   status: string;
   sender_ip: string;
+  username: string;
   source_port: number;
   destinations: string[];
   destination_port: number;
+  error: string | null;
 }
 
 export interface AudioInputDeviceResponse {
@@ -243,10 +247,11 @@ export interface ShowfileSettingsPayload {
   external_sync_midi_input_name: string | null;
   alerts_enabled: boolean;
   alert_popup_duration_sec: number;
-  radioworld_enabled: boolean;
-  radioworld_flash_enabled: boolean;
-  radioworld_hold_seconds: number;
-  radioworld_interface_ip: string | null;
+  rchat_enabled: boolean;
+  rchat_flash_enabled: boolean;
+  rchat_hold_seconds: number;
+  rchat_interface_ip: string | null;
+  rchat_username: string;
 }
 
 export interface ShowfilePayload {

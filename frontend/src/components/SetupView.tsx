@@ -213,7 +213,7 @@ interface SetupViewProps {
   onExportShowfile: () => Promise<void>;
   onImportShowfile: (file: File) => Promise<void>;
   onTestAlerts: () => Promise<void>;
-  onTestRadioWorld: () => Promise<void>;
+  onTestRChat: () => Promise<void>;
 }
 
 export function SetupView({
@@ -241,7 +241,7 @@ export function SetupView({
   onExportShowfile,
   onImportShowfile,
   onTestAlerts,
-  onTestRadioWorld,
+  onTestRChat,
 }: SetupViewProps): JSX.Element {
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
   const orderedScenes = useMemo(() => sortScenes(scenes), [scenes]);
@@ -281,10 +281,11 @@ export function SetupView({
   const [alertsForm, setAlertsForm] = useState({
     alerts_enabled: true,
     alert_popup_duration_sec: 6,
-    radioworld_enabled: false,
-    radioworld_flash_enabled: false,
-    radioworld_hold_seconds: 8,
-    radioworld_interface_ip: '',
+    rchat_enabled: false,
+    rchat_flash_enabled: false,
+    rchat_hold_seconds: 8,
+    rchat_interface_ip: '',
+    rchat_username: 'Mic-Wise',
   });
   const [sceneName, setSceneName] = useState('');
   const [sceneCueForm, setSceneCueForm] = useState({
@@ -317,10 +318,11 @@ export function SetupView({
     setAlertsForm({
       alerts_enabled: Boolean(settings?.alerts_enabled ?? true),
       alert_popup_duration_sec: Math.max(1, Number(settings?.alert_popup_duration_sec ?? 6)),
-      radioworld_enabled: Boolean(settings?.radioworld_enabled),
-      radioworld_flash_enabled: Boolean(settings?.radioworld_flash_enabled),
-      radioworld_hold_seconds: Math.max(1, Number(settings?.radioworld_hold_seconds ?? 8)),
-      radioworld_interface_ip: settings?.radioworld_interface_ip ?? '',
+      rchat_enabled: Boolean(settings?.rchat_enabled),
+      rchat_flash_enabled: Boolean(settings?.rchat_flash_enabled),
+      rchat_hold_seconds: Math.max(1, Number(settings?.rchat_hold_seconds ?? 8)),
+      rchat_interface_ip: settings?.rchat_interface_ip ?? '',
+      rchat_username: settings?.rchat_username ?? 'Mic-Wise',
     });
   }, [settings]);
 
@@ -992,12 +994,12 @@ export function SetupView({
 
               <section className="scene-sync-settings-panel panel-card">
           <div>
-            <h3>Alerts and RadioWorld</h3>
+            <h3>Alerts and RChat</h3>
           </div>
 
           <div className="panel-heading-actions">
             <button type="button" className="secondary" onClick={() => void onTestAlerts()}>Test alert</button>
-            <button type="button" className="secondary" onClick={() => void onTestRadioWorld()}>Test RadioWorld</button>
+            <button type="button" className="secondary" onClick={() => void onTestRChat()}>Test RChat</button>
           </div>
 
           <div className="scene-sync-settings-grid">
@@ -1036,86 +1038,109 @@ export function SetupView({
               />
             </label>
 
-            <label className="field-group field-group--toggle" htmlFor="radioworld-enabled">
-              <span>Send to RadioWorld</span>
+            <label className="field-group field-group--toggle" htmlFor="rchat-enabled">
+              <span>Send to RChat</span>
               <input
-                id="radioworld-enabled"
+                id="rchat-enabled"
                 type="checkbox"
-                checked={alertsForm.radioworld_enabled}
+                checked={alertsForm.rchat_enabled}
                 onChange={(event) => {
-                  const nextForm = { ...alertsForm, radioworld_enabled: event.target.checked };
+                  const nextForm = { ...alertsForm, rchat_enabled: event.target.checked };
                   setAlertsForm(nextForm);
                   void onSaveSettings({
-                    radioworld_enabled: nextForm.radioworld_enabled,
-                    radioworld_flash_enabled: nextForm.radioworld_flash_enabled,
-                    radioworld_hold_seconds: nextForm.radioworld_hold_seconds,
-                    radioworld_interface_ip: nextForm.radioworld_interface_ip || null,
+                    rchat_enabled: nextForm.rchat_enabled,
+                    rchat_flash_enabled: nextForm.rchat_flash_enabled,
+                    rchat_hold_seconds: nextForm.rchat_hold_seconds,
+                    rchat_interface_ip: nextForm.rchat_interface_ip || null,
+                    rchat_username: nextForm.rchat_username.trim() || 'Mic-Wise',
                   });
                 }}
               />
             </label>
 
-            <label className="field-group field-group--toggle" htmlFor="radioworld-flash-enabled">
+            <label className="field-group field-group--toggle" htmlFor="rchat-flash-enabled">
               <span>Flash message</span>
               <input
-                id="radioworld-flash-enabled"
+                id="rchat-flash-enabled"
                 type="checkbox"
-                checked={alertsForm.radioworld_flash_enabled}
-                disabled={!alertsForm.radioworld_enabled}
+                checked={alertsForm.rchat_flash_enabled}
+                disabled={!alertsForm.rchat_enabled}
                 onChange={(event) => {
-                  const nextForm = { ...alertsForm, radioworld_flash_enabled: event.target.checked };
+                  const nextForm = { ...alertsForm, rchat_flash_enabled: event.target.checked };
                   setAlertsForm(nextForm);
                   void onSaveSettings({
-                    radioworld_enabled: nextForm.radioworld_enabled,
-                    radioworld_flash_enabled: nextForm.radioworld_flash_enabled,
-                    radioworld_hold_seconds: nextForm.radioworld_hold_seconds,
-                    radioworld_interface_ip: nextForm.radioworld_interface_ip || null,
+                    rchat_enabled: nextForm.rchat_enabled,
+                    rchat_flash_enabled: nextForm.rchat_flash_enabled,
+                    rchat_hold_seconds: nextForm.rchat_hold_seconds,
+                    rchat_interface_ip: nextForm.rchat_interface_ip || null,
+                    rchat_username: nextForm.rchat_username.trim() || 'Mic-Wise',
                   });
                 }}
               />
             </label>
 
-            <label className="field-group" htmlFor="radioworld-hold-seconds">
-              <span>RadioWorld hold</span>
+            <label className="field-group" htmlFor="rchat-hold-seconds">
+              <span>RChat hold</span>
               <input
-                id="radioworld-hold-seconds"
+                id="rchat-hold-seconds"
                 type="number"
                 min={1}
                 max={30}
                 step={1}
-                disabled={!alertsForm.radioworld_enabled}
-                value={alertsForm.radioworld_hold_seconds}
+                disabled={!alertsForm.rchat_enabled}
+                value={alertsForm.rchat_hold_seconds}
                 onChange={(event) => {
                   setAlertsForm({
                     ...alertsForm,
-                    radioworld_hold_seconds: Math.max(1, Number(event.target.value || 1)),
+                    rchat_hold_seconds: Math.max(1, Number(event.target.value || 1)),
                   });
                 }}
                 onBlur={() => {
                   void onSaveSettings({
-                    radioworld_enabled: alertsForm.radioworld_enabled,
-                    radioworld_flash_enabled: alertsForm.radioworld_flash_enabled,
-                    radioworld_hold_seconds: alertsForm.radioworld_hold_seconds,
-                    radioworld_interface_ip: alertsForm.radioworld_interface_ip || null,
+                    rchat_enabled: alertsForm.rchat_enabled,
+                    rchat_flash_enabled: alertsForm.rchat_flash_enabled,
+                    rchat_hold_seconds: alertsForm.rchat_hold_seconds,
+                    rchat_interface_ip: alertsForm.rchat_interface_ip || null,
+                    rchat_username: alertsForm.rchat_username.trim() || 'Mic-Wise',
                   });
                 }}
               />
             </label>
 
-            <label className="field-group" htmlFor="radioworld-interface-ip">
-              <span>RadioWorld interface</span>
-              <select
-                id="radioworld-interface-ip"
-                disabled={!alertsForm.radioworld_enabled}
-                value={alertsForm.radioworld_interface_ip}
+            <label className="field-group" htmlFor="rchat-username">
+              <span>RChat display name</span>
+              <input
+                id="rchat-username"
+                type="text"
+                maxLength={128}
+                disabled={!alertsForm.rchat_enabled}
+                value={alertsForm.rchat_username}
                 onChange={(event) => {
-                  const nextForm = { ...alertsForm, radioworld_interface_ip: event.target.value };
+                  setAlertsForm({ ...alertsForm, rchat_username: event.target.value });
+                }}
+                onBlur={() => {
+                  const username = alertsForm.rchat_username.trim() || 'Mic-Wise';
+                  setAlertsForm({ ...alertsForm, rchat_username: username });
+                  void onSaveSettings({ rchat_username: username });
+                }}
+              />
+            </label>
+
+            <label className="field-group" htmlFor="rchat-interface-ip">
+              <span>RChat interface</span>
+              <select
+                id="rchat-interface-ip"
+                disabled={!alertsForm.rchat_enabled}
+                value={alertsForm.rchat_interface_ip}
+                onChange={(event) => {
+                  const nextForm = { ...alertsForm, rchat_interface_ip: event.target.value };
                   setAlertsForm(nextForm);
                   void onSaveSettings({
-                    radioworld_enabled: nextForm.radioworld_enabled,
-                    radioworld_flash_enabled: nextForm.radioworld_flash_enabled,
-                    radioworld_hold_seconds: nextForm.radioworld_hold_seconds,
-                    radioworld_interface_ip: nextForm.radioworld_interface_ip || null,
+                    rchat_enabled: nextForm.rchat_enabled,
+                    rchat_flash_enabled: nextForm.rchat_flash_enabled,
+                    rchat_hold_seconds: nextForm.rchat_hold_seconds,
+                    rchat_interface_ip: nextForm.rchat_interface_ip || null,
+                    rchat_username: nextForm.rchat_username.trim() || 'Mic-Wise',
                   });
                 }}
               >

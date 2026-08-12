@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 
 from app.core.settings import MicWiseSettings
 from app.database.repository import (
@@ -39,6 +40,7 @@ def test_initialise_show_file_seeds_default_records(tmp_path) -> None:
             assert settings_row.channel_count == 4
             assert settings_row.sample_rate == 48_000
             assert settings_row.master_gain_db == 0.0
+            assert settings_row.rchat_username == "Mic-Wise"
 
             channels = await list_channels(database)
             assert len(channels) == 4
@@ -113,6 +115,53 @@ def test_initialise_show_file_preserves_deleted_channels(tmp_path) -> None:
             await database.dispose()
 
     asyncio.run(scenario())
+
+
+def test_initialise_show_file_migrates_radioworld_settings_to_rchat(tmp_path) -> None:
+    settings = MicWiseSettings(
+        data_directory=tmp_path,
+        show_filename="legacy_show.micwise",
+        buffer_filename="legacy_audio.buffer",
+        default_sample_rate=48_000,
+        default_channel_count=4,
+        default_buffer_duration_sec=300,
+        default_block_size=480,
+    )
+    settings.ensure_directories()
+
+    async def seed_current_schema() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+        finally:
+            await database.dispose()
+
+    asyncio.run(seed_current_schema())
+
+    with sqlite3.connect(settings.show_path) as connection:
+        connection.execute("ALTER TABLE settings RENAME COLUMN rchat_enabled TO radioworld_enabled")
+        connection.execute("ALTER TABLE settings RENAME COLUMN rchat_flash_enabled TO radioworld_flash_enabled")
+        connection.execute("ALTER TABLE settings RENAME COLUMN rchat_hold_seconds TO radioworld_hold_seconds")
+        connection.execute("ALTER TABLE settings RENAME COLUMN rchat_interface_ip TO radioworld_interface_ip")
+        connection.execute("ALTER TABLE settings DROP COLUMN rchat_username")
+        connection.execute(
+            "UPDATE settings SET radioworld_enabled = 1, radioworld_flash_enabled = 1, "
+            "radioworld_hold_seconds = 12, radioworld_interface_ip = '192.0.2.10'",
+        )
+
+    async def verify_migration() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            migrated = await initialise_show_file(database, settings)
+            assert migrated.rchat_enabled is True
+            assert migrated.rchat_flash_enabled is True
+            assert migrated.rchat_hold_seconds == 12
+            assert migrated.rchat_interface_ip == "192.0.2.10"
+            assert migrated.rchat_username == "Mic-Wise"
+        finally:
+            await database.dispose()
+
+    asyncio.run(verify_migration())
 
 
 def test_scene_crud_and_channel_delete_resequencing(tmp_path) -> None:

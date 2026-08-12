@@ -17,7 +17,7 @@ from app.core.settings import MicWiseSettings
 from app.database.repository import initialise_show_file
 from app.database.session import DatabaseManager
 from app.network.discovery import ZeroconfService
-from app.network.radioworld import RadioWorldBroadcaster
+from app.network.rchat import RChatBroadcaster
 from app.sync.service import SceneSyncService
 
 
@@ -44,14 +44,15 @@ async def lifespan(app: FastAPI):
 	app.state.database = database
 	app.state.websocket_manager = websocket_manager
 	app.state.discovery_service = discovery_service
-	radioworld_broadcaster = RadioWorldBroadcaster()
-	radioworld_broadcaster.update_settings(
-		enabled=bool(show_settings.radioworld_enabled),
-		flash_enabled=bool(show_settings.radioworld_flash_enabled),
-		hold_seconds=int(show_settings.radioworld_hold_seconds),
-		interface_ip=show_settings.radioworld_interface_ip,
+	rchat_broadcaster = RChatBroadcaster()
+	rchat_broadcaster.update_settings(
+		enabled=bool(show_settings.rchat_enabled),
+		flash_enabled=bool(show_settings.rchat_flash_enabled),
+		hold_seconds=int(show_settings.rchat_hold_seconds),
+		interface_ip=show_settings.rchat_interface_ip,
+		username=show_settings.rchat_username,
 	)
-	app.state.radioworld_broadcaster = radioworld_broadcaster
+	app.state.rchat_broadcaster = rchat_broadcaster
 
 	async def bound_restart_audio_runtime(updated_show_settings: object) -> None:
 		await restart_audio_runtime(app, updated_show_settings)
@@ -66,7 +67,7 @@ async def lifespan(app: FastAPI):
 		yield
 	finally:
 		await scene_sync_service.stop()
-		await radioworld_broadcaster.close()
+		await rchat_broadcaster.close()
 		await stop_audio_runtime(getattr(app.state, "audio_runtime", None))
 		if discovery_service is not None:
 			discovery_service.stop()

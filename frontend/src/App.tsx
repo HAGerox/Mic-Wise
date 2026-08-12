@@ -13,7 +13,7 @@ import {
   listAudioInputDevices,
   listNetworkInterfaces,
   testAlerts,
-  testRadioWorld,
+  testRChat,
   updateSettings,
 } from './api/settings';
 import { getSyncStatus } from './api/sync';
@@ -779,13 +779,17 @@ function AppContent(): JSX.Element {
     }
   }, [dismissToastAlert, queryClient, setStatusText, settings?.alert_popup_duration_sec]);
 
-  const handleTestRadioWorld = useCallback(async (): Promise<void> => {
+  const handleTestRChat = useCallback(async (): Promise<void> => {
     try {
-      const result = await testRadioWorld();
-      setStatusText(`RadioWorld test sent from ${result.sender_ip}:${result.source_port}`);
+      const result = await testRChat();
+      if (result.error) {
+        setStatusText(`RChat test failed: ${result.error}`);
+        return;
+      }
+      setStatusText(`RChat test sent as ${result.username} from ${result.sender_ip}:${result.source_port}`);
     } catch (error) {
-      console.error('Unable to test RadioWorld', error);
-      setStatusText('RadioWorld test failed');
+      console.error('Unable to test RChat', error);
+      setStatusText('RChat test failed');
     }
   }, [setStatusText]);
 
@@ -898,7 +902,7 @@ function AppContent(): JSX.Element {
         onExportShowfile={handleExportShowfile}
         onImportShowfile={handleImportShowfile}
         onTestAlerts={handleTestAlerts}
-        onTestRadioWorld={handleTestRadioWorld}
+        onTestRChat={handleTestRChat}
       />
 
       <audio id="monitor-audio" className="sr-audio" autoPlay playsInline ref={audioElementRef}></audio>

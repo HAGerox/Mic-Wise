@@ -4,7 +4,7 @@ import type {
   AudioAlertResponse,
   HealthResponse,
   NetworkInterfaceResponse,
-  RadioWorldTestResponse,
+  RChatTestResponse,
   SettingsResponse,
   SettingsUpdateRequest,
 } from '../types/api';
@@ -36,6 +36,6 @@ export function testAlerts(): Promise<AudioAlertResponse> {
   return fetchJson<AudioAlertResponse>('/api/alerts/test', { method: 'POST' });
 }
 
-export function testRadioWorld(): Promise<RadioWorldTestResponse> {
-  return fetchJson<RadioWorldTestResponse>('/api/radioworld/test', { method: 'POST' });
+export function testRChat(): Promise<RChatTestResponse> {
+  return fetchJson<RChatTestResponse>('/api/rchat/test', { method: 'POST' });
 }

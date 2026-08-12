@@ -39,6 +39,8 @@ def test_api_health_and_static_frontend(tmp_path, monkeypatch) -> None:
 		assert settings.json()["active_scene_id"] == 1
 		assert settings.json()["external_sync_enabled"] is False
 		assert settings.json()["external_sync_transport"] == "off"
+		assert settings.json()["rchat_enabled"] is False
+		assert settings.json()["rchat_username"] == "Mic-Wise"
 
 		channels = client.get("/api/channels")
 		assert channels.status_code == 200
@@ -364,6 +366,7 @@ def test_showfile_export_and_import_routes_round_trip(tmp_path, monkeypatch) -> 
 
 		payload["settings"]["master_gain_db"] = 5.0
 		payload["settings"]["alert_popup_duration_sec"] = 9
+		payload["settings"]["rchat_username"] = "A2 Desk"
 		payload["channels"][0]["name"] = "Imported Lead"
 		payload["scenes"][0]["name"] = "Imported Scene 1"
 
@@ -375,6 +378,7 @@ def test_showfile_export_and_import_routes_round_trip(tmp_path, monkeypatch) -> 
 		assert settings.status_code == 200
 		assert settings.json()["master_gain_db"] == 5.0
 		assert settings.json()["alert_popup_duration_sec"] == 9
+		assert settings.json()["rchat_username"] == "A2 Desk"
 
 		channels = client.get("/api/channels")
 		assert channels.status_code == 200

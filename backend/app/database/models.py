@@ -39,10 +39,11 @@ class SettingsRecord(Base):
     external_sync_midi_input_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     alerts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     alert_popup_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=6)
-    radioworld_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    radioworld_flash_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    radioworld_hold_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
-    radioworld_interface_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    rchat_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rchat_flash_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rchat_hold_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    rchat_interface_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    rchat_username: Mapped[str] = mapped_column(String(128), nullable=False, default="Mic-Wise")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

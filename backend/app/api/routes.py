@@ -16,7 +16,7 @@ from app.api.schemas import (
 	HealthResponse,
 	MeterSnapshotResponse,
 	NetworkInterfaceResponse,
-	RadioWorldTestResponse,
+	RChatTestResponse,
 	SceneCreateRequest,
 	SceneSyncEventRequest,
 	SceneSyncEventResponse,
@@ -117,7 +117,7 @@ async def patch_settings(
 			raise HTTPException(status_code=400, detail="Unsupported audio source mode")
 		changes["audio_source_mode"] = audio_source_mode
 
-	for field_name in ("sample_rate", "channel_count", "buffer_duration_sec", "block_size", "alert_popup_duration_sec", "radioworld_hold_seconds"):
+	for field_name in ("sample_rate", "channel_count", "buffer_duration_sec", "block_size", "alert_popup_duration_sec", "rchat_hold_seconds"):
 		if field_name in changes and changes[field_name] is not None and int(changes[field_name]) <= 0:
 			raise HTTPException(status_code=400, detail=f"{field_name} must be positive")
 
@@ -138,11 +138,12 @@ async def patch_settings(
 	else:
 		request.app.state.alert_analysis.apply_settings(enabled=bool(updated_settings.alerts_enabled))
 
-	request.app.state.radioworld_broadcaster.update_settings(
-		enabled=bool(updated_settings.radioworld_enabled),
-		flash_enabled=bool(updated_settings.radioworld_flash_enabled),
-		hold_seconds=int(updated_settings.radioworld_hold_seconds),
-		interface_ip=updated_settings.radioworld_interface_ip,
+	request.app.state.rchat_broadcaster.update_settings(
+		enabled=bool(updated_settings.rchat_enabled),
+		flash_enabled=bool(updated_settings.rchat_flash_enabled),
+		hold_seconds=int(updated_settings.rchat_hold_seconds),
+		interface_ip=updated_settings.rchat_interface_ip,
+		username=updated_settings.rchat_username,
 	)
 	if set(changes) & SYNC_SETTING_FIELDS:
 		await request.app.state.scene_sync_service.reload()
@@ -157,7 +158,7 @@ async def read_audio_input_devices() -> list[AudioInputDeviceResponse]:
 
 @router.get("/network/interfaces", response_model=list[NetworkInterfaceResponse])
 async def read_network_interfaces() -> list[NetworkInterfaceResponse]:
-	"""Return IPv4 interfaces that can source RadioWorld UDP broadcasts."""
+	"""Return IPv4 interfaces that can source RChat UDP broadcasts."""
 	return [NetworkInterfaceResponse(**interface.to_dict()) for interface in list_ipv4_network_interfaces()]
 
 
@@ -338,11 +339,11 @@ async def test_alerts(request: Request) -> AudioAlertResponse:
 	)
 
 
-@router.post("/radioworld/test", response_model=RadioWorldTestResponse)
-async def test_radioworld(request: Request) -> RadioWorldTestResponse:
-	"""Send a synthetic RadioWorld UDP message using current settings."""
-	status = await request.app.state.radioworld_broadcaster.send_test_message()
-	return RadioWorldTestResponse(status="ok", **status.to_dict())
+@router.post("/rchat/test", response_model=RChatTestResponse)
+async def test_rchat(request: Request) -> RChatTestResponse:
+	"""Send a synthetic RChat UDP message using current settings."""
+	status = await request.app.state.rchat_broadcaster.send_test_message()
+	return RChatTestResponse(status="ok" if status.error is None else "error", **status.to_dict())
 
 
 @router.post("/sync/events", response_model=SceneSyncEventResponse)
@@ -409,11 +410,12 @@ async def upload_showfile(payload: ShowfilePayload, request: Request) -> Showfil
 	database = request.app.state.database
 	updated_settings = await import_showfile(database, payload.model_dump(mode="python"))
 	await request.app.state.restart_audio_runtime(updated_settings)
-	request.app.state.radioworld_broadcaster.update_settings(
-		enabled=bool(updated_settings.radioworld_enabled),
-		flash_enabled=bool(updated_settings.radioworld_flash_enabled),
-		hold_seconds=int(updated_settings.radioworld_hold_seconds),
-		interface_ip=updated_settings.radioworld_interface_ip,
+	request.app.state.rchat_broadcaster.update_settings(
+		enabled=bool(updated_settings.rchat_enabled),
+		flash_enabled=bool(updated_settings.rchat_flash_enabled),
+		hold_seconds=int(updated_settings.rchat_hold_seconds),
+		interface_ip=updated_settings.rchat_interface_ip,
+		username=updated_settings.rchat_username,
 	)
 	await request.app.state.scene_sync_service.reload()
 	return ShowfileImportResponse(status="ok", channels=len(payload.channels), scenes=len(payload.scenes))

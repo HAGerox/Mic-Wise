@@ -1,6 +1,6 @@
 ## Runtime architecture
 
-- Preserve the FastAPI/audio split: `backend/app/audio/engine.py` runs in a separate `multiprocessing.Process`; API routes, WebSockets, metering, alerts, WebRTC, discovery, RadioWorld, and scene sync stay in the FastAPI process.
+- Preserve the FastAPI/audio split: `backend/app/audio/engine.py` runs in a separate `multiprocessing.Process`; API routes, WebSockets, metering, alerts, WebRTC, discovery, RChat, and scene sync stay in the FastAPI process.
 - Use `backend/app/audio/buffer.py` as the process boundary: the engine writes interleaved `int16` PCM to the shared `mmap` ring buffer, while analysis, alerts, waveform previews, and WebRTC read copied arrays from it.
 - Keep the `mmap` buffer disposable under `runtime_directory/port-{port}`; persisted show data belongs under `data_directory`, because cloud-synced mapped files caused macOS `SIGBUS`/truncation failures and multi-instance collisions.
 - Treat display channels as show-file rows independent of physical input capacity; deleting display channels is user intent and must not be undone by reseeding unless the show has no channels at all.
@@ -16,14 +16,14 @@
 ## Persistence and integrations
 
 - Route show-file mutations through `backend/app/database/repository.py` so migrations, normalization, ordering, and import/export semantics stay centralized.
-- Optional host integrations fail soft: audio device discovery, Zeroconf, OSC, MIDI, network interface discovery, and RadioWorld UDP should degrade to empty status/error info rather than breaking core monitoring.
-- RadioWorld follows the captured UDP protocol in `docs/Radio World UDP Protocol Specification.md`: source/destination port `1090`, payload `RWSENDIP{sender_ip}#{command}`, duplicate command packets about 39 ms apart, `KEYP{text}`/`KEYP{text}\n`, `COMM0` flash, `COMM1` unflash, `COMM8` clear.
+- Optional host integrations fail soft: audio device discovery, Zeroconf, OSC, MIDI, network interface discovery, and RChat UDP should degrade to empty status/error info rather than breaking core monitoring.
+- RChat follows the installed 1.5 protocol documented in `docs/RChat UDP Protocol Specification.md`: source/destination port `1090`, payload `RWSENDIP{sender_ip}#USER{username}#{command}`, UTF-8 text via `KEYP{text}`, `COMM0` flash, `COMM1` unflash, and `COMM8` clear.
 - Audio input devices are persisted as stable `hostapi::device` selectors; `hardware` is only a UI/API alias that normalizes to `sounddevice`.
 - Scene sync matches normalized OSC/MIDI events against persisted scene cue fields and only changes `settings.active_scene_id`; it does not mutate frontend checklist state.
 
 ## Frontend
 
-- Preserve the operator workflows: `monitor` for all-channel monitoring, `show` for scene-focused mic checks, and `setup` for channel, scene, sync, alert, RadioWorld, and showfile programming.
+- Preserve the operator workflows: `monitor` for all-channel monitoring, `show` for scene-focused mic checks, and `setup` for channel, scene, sync, alert, RChat, and showfile programming.
 - Keep server state in TanStack Query, local interaction state in `frontend/src/state/appStateReducer.ts`, and transport work in hooks such as `useMeters`, `useWaveform`, and `useAudioTransport`.
 - Put pure browser workflow logic in `frontend/src/lib/ui-logic.ts` or a nearby pure helper with Vitest coverage rather than burying it in React components.
 - Guard timer/transport-driven UI updates with request tokens or selected-entity checks before applying async results, so stale work cannot repaint the wrong selection.

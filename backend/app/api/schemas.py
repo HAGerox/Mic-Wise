@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.sync.service import ExternalSyncEvent
 
@@ -42,10 +42,11 @@ class SettingsResponse(BaseModel):
     external_sync_midi_input_name: str | None
     alerts_enabled: bool
     alert_popup_duration_sec: int
-    radioworld_enabled: bool
-    radioworld_flash_enabled: bool
-    radioworld_hold_seconds: int
-    radioworld_interface_ip: str | None
+    rchat_enabled: bool
+    rchat_flash_enabled: bool
+    rchat_hold_seconds: int
+    rchat_interface_ip: str | None
+    rchat_username: str
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -69,10 +70,11 @@ class SettingsUpdateRequest(BaseModel):
     external_sync_midi_input_name: str | None = None
     alerts_enabled: bool | None = None
     alert_popup_duration_sec: int | None = None
-    radioworld_enabled: bool | None = None
-    radioworld_flash_enabled: bool | None = None
-    radioworld_hold_seconds: int | None = None
-    radioworld_interface_ip: str | None = None
+    rchat_enabled: bool | None = None
+    rchat_flash_enabled: bool | None = None
+    rchat_hold_seconds: int | None = None
+    rchat_interface_ip: str | None = None
+    rchat_username: str | None = None
 
 
 class NetworkInterfaceResponse(BaseModel):
@@ -85,14 +87,16 @@ class NetworkInterfaceResponse(BaseModel):
     is_loopback: bool
 
 
-class RadioWorldTestResponse(BaseModel):
-    """Details returned after sending a RadioWorld test packet."""
+class RChatTestResponse(BaseModel):
+    """Details returned after sending an RChat test packet."""
 
     status: str
     sender_ip: str
+    username: str
     source_port: int
     destinations: list[str]
     destination_port: int
+    error: str | None = None
 
 
 class AudioInputDeviceResponse(BaseModel):
@@ -332,10 +336,23 @@ class ShowfileSettingsPayload(BaseModel):
     external_sync_midi_input_name: str | None = None
     alerts_enabled: bool = True
     alert_popup_duration_sec: int = 6
-    radioworld_enabled: bool = False
-    radioworld_flash_enabled: bool = False
-    radioworld_hold_seconds: int = 8
-    radioworld_interface_ip: str | None = None
+    rchat_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("rchat_enabled", "radioworld_enabled"),
+    )
+    rchat_flash_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("rchat_flash_enabled", "radioworld_flash_enabled"),
+    )
+    rchat_hold_seconds: int = Field(
+        default=8,
+        validation_alias=AliasChoices("rchat_hold_seconds", "radioworld_hold_seconds"),
+    )
+    rchat_interface_ip: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("rchat_interface_ip", "radioworld_interface_ip"),
+    )
+    rchat_username: str = "Mic-Wise"
 
 
 class ShowfilePayload(BaseModel):

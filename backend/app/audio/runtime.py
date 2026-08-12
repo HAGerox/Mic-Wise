@@ -119,7 +119,7 @@ async def restart_audio_runtime(app: FastAPI, show_settings: object) -> None:
         settings=app.state.settings,
         show_settings=show_settings,
         websocket_manager=app.state.websocket_manager,
-        alert_notifier=getattr(app.state, "radioworld_broadcaster", None),
+        alert_notifier=getattr(app.state, "rchat_broadcaster", None),
     )
     app.state.audio_runtime = runtime
     app.state.audio_process = runtime.audio_process

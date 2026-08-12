@@ -102,28 +102,42 @@ async def _ensure_show_file_compatibility(database: DatabaseManager) -> None:
                     "ALTER TABLE settings ADD COLUMN alert_popup_duration_sec INTEGER NOT NULL DEFAULT 6",
                 ),
             )
-        if settings_columns and "radioworld_enabled" not in settings_columns:
+        if settings_columns and "rchat_enabled" not in settings_columns:
             await connection.execute(
                 text(
-                    "ALTER TABLE settings ADD COLUMN radioworld_enabled BOOLEAN NOT NULL DEFAULT 0",
+                    "ALTER TABLE settings ADD COLUMN rchat_enabled BOOLEAN NOT NULL DEFAULT 0",
                 ),
             )
-        if settings_columns and "radioworld_flash_enabled" not in settings_columns:
+            if "radioworld_enabled" in settings_columns:
+                await connection.execute(text("UPDATE settings SET rchat_enabled = radioworld_enabled"))
+        if settings_columns and "rchat_flash_enabled" not in settings_columns:
             await connection.execute(
                 text(
-                    "ALTER TABLE settings ADD COLUMN radioworld_flash_enabled BOOLEAN NOT NULL DEFAULT 0",
+                    "ALTER TABLE settings ADD COLUMN rchat_flash_enabled BOOLEAN NOT NULL DEFAULT 0",
                 ),
             )
-        if settings_columns and "radioworld_hold_seconds" not in settings_columns:
+            if "radioworld_flash_enabled" in settings_columns:
+                await connection.execute(text("UPDATE settings SET rchat_flash_enabled = radioworld_flash_enabled"))
+        if settings_columns and "rchat_hold_seconds" not in settings_columns:
             await connection.execute(
                 text(
-                    "ALTER TABLE settings ADD COLUMN radioworld_hold_seconds INTEGER NOT NULL DEFAULT 8",
+                    "ALTER TABLE settings ADD COLUMN rchat_hold_seconds INTEGER NOT NULL DEFAULT 8",
                 ),
             )
-        if settings_columns and "radioworld_interface_ip" not in settings_columns:
+            if "radioworld_hold_seconds" in settings_columns:
+                await connection.execute(text("UPDATE settings SET rchat_hold_seconds = radioworld_hold_seconds"))
+        if settings_columns and "rchat_interface_ip" not in settings_columns:
             await connection.execute(
                 text(
-                    "ALTER TABLE settings ADD COLUMN radioworld_interface_ip VARCHAR(45)",
+                    "ALTER TABLE settings ADD COLUMN rchat_interface_ip VARCHAR(45)",
+                ),
+            )
+            if "radioworld_interface_ip" in settings_columns:
+                await connection.execute(text("UPDATE settings SET rchat_interface_ip = radioworld_interface_ip"))
+        if settings_columns and "rchat_username" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN rchat_username VARCHAR(128) NOT NULL DEFAULT 'Mic-Wise'",
                 ),
             )
 
@@ -193,10 +207,11 @@ async def initialise_show_file(
                 external_sync_osc_port=53001,
                 alerts_enabled=True,
                 alert_popup_duration_sec=6,
-                radioworld_enabled=False,
-                radioworld_flash_enabled=False,
-                radioworld_hold_seconds=8,
-                radioworld_interface_ip=None,
+                rchat_enabled=False,
+                rchat_flash_enabled=False,
+                rchat_hold_seconds=8,
+                rchat_interface_ip=None,
+                rchat_username="Mic-Wise",
             )
             session.add(settings_row)
             await session.flush()
@@ -444,7 +459,7 @@ async def update_settings(
             raise RuntimeError("Show settings have not been initialised")
 
         for field_name, value in changes.items():
-            if field_name in {"audio_input_device", "external_sync_midi_input_name", "radioworld_interface_ip"}:
+            if field_name in {"audio_input_device", "external_sync_midi_input_name", "rchat_interface_ip"}:
                 value = _normalise_optional_text(value)
             setattr(settings_row, field_name, value)
 
@@ -474,10 +489,11 @@ def _serialise_showfile_settings(settings_row: SettingsRecord, active_scene: Sce
         "external_sync_midi_input_name": settings_row.external_sync_midi_input_name,
         "alerts_enabled": settings_row.alerts_enabled,
         "alert_popup_duration_sec": settings_row.alert_popup_duration_sec,
-        "radioworld_enabled": settings_row.radioworld_enabled,
-        "radioworld_flash_enabled": settings_row.radioworld_flash_enabled,
-        "radioworld_hold_seconds": settings_row.radioworld_hold_seconds,
-        "radioworld_interface_ip": settings_row.radioworld_interface_ip,
+        "rchat_enabled": settings_row.rchat_enabled,
+        "rchat_flash_enabled": settings_row.rchat_flash_enabled,
+        "rchat_hold_seconds": settings_row.rchat_hold_seconds,
+        "rchat_interface_ip": settings_row.rchat_interface_ip,
+        "rchat_username": settings_row.rchat_username,
     }
 
 
@@ -624,7 +640,7 @@ async def import_showfile(database: DatabaseManager, payload: dict[str, object])
         for field_name, value in settings_payload.items():
             if field_name == "active_scene_order_index":
                 continue
-            if field_name in {"audio_input_device", "external_sync_midi_input_name", "radioworld_interface_ip"}:
+            if field_name in {"audio_input_device", "external_sync_midi_input_name", "rchat_interface_ip"}:
                 value = _normalise_optional_text(value)
             setattr(settings_row, field_name, value)
 
