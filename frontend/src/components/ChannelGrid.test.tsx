@@ -69,6 +69,20 @@ afterEach(() => {
 });
 
 describe('ChannelGrid layout ordering', () => {
+  it('uses one image-backed energy view instead of a redundant loudness meter', () => {
+    const channel = { ...buildChannel(1, 0), photo_path: 'https://example.com/performer.jpg' };
+    const { container } = renderGrid([channel], { layoutMode: false });
+
+    const card = screen.getByRole('button', { name: /CH 01 Channel 1, Live/ });
+    const photoLayer = container.querySelector('.channel-photo-layer');
+
+    expect(card).toBeInTheDocument();
+    expect(container.querySelector('.channel-energy')).toBeInTheDocument();
+    expect(container.querySelector('.meter--vertical')).not.toBeInTheDocument();
+    expect(photoLayer).toHaveClass('has-photo');
+    expect(photoLayer).toHaveStyle({ backgroundImage: 'url("https://example.com/performer.jpg")' });
+  });
+
   it('persists dropped strip order with the latest callback after channels load', async () => {
     const initialPersistOrder = vi.fn().mockResolvedValue(undefined);
     const latestPersistOrder = vi.fn().mockResolvedValue(undefined);

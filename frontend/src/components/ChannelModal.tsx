@@ -1,4 +1,4 @@
-import { formatGainDb, formatPlaybackOffset, getInputLabel, isDefaultChannelName } from '../lib/format';
+import { formatGainDb, formatPlaybackOffset, getChannelInitials, getInputLabel, isDefaultChannelName } from '../lib/format';
 import { MODAL_WAVEFORM_WINDOW_SECONDS } from '../hooks/useWaveform';
 import { buildWaveformRulerMarks } from '../lib/ui-logic';
 import { WaveformCanvas } from './WaveformCanvas';
@@ -45,6 +45,9 @@ export function ChannelModal({
   const historyLabel = `${historyMinutes} min rolling peak history`;
   const rulerMarks = buildWaveformRulerMarks(MODAL_WAVEFORM_WINDOW_SECONDS, 60, 15, 30);
   const channelIdentity = `CH ${channel.number.toString().padStart(2, '0')}`;
+  const photoStyle = channel.photo_path
+    ? { backgroundImage: `url(${JSON.stringify(channel.photo_path)})` }
+    : undefined;
 
   return (
     <>
@@ -62,20 +65,25 @@ export function ChannelModal({
       >
         <button id="close-modal" className="icon-button inspector-close-button" type="button" aria-label="Close channel details" onClick={onClose}>×</button>
         <header className="modal-header">
-          <div className="modal-header-copy">
-            <h2 id="modal-channel-name">
-              {repeatedName ? (
-                channelIdentity
-              ) : (
-                <>
-                  <span id="modal-channel-number" className="modal-kicker">{channelIdentity}</span>
-                  {channel.name}
-                </>
-              )}
-            </h2>
-            <p id="modal-channel-meta" className="modal-meta">
-              {channel.is_record_enabled ? 'Rolling capture armed' : 'Rolling capture off'}
-            </p>
+          <div className="modal-identity">
+            <div className={`modal-channel-photo ${channel.photo_path ? 'has-photo' : ''}`} style={photoStyle} aria-hidden="true">
+              {!channel.photo_path ? getChannelInitials(channel) : null}
+            </div>
+            <div className="modal-header-copy">
+              <h2 id="modal-channel-name">
+                {repeatedName ? (
+                  channelIdentity
+                ) : (
+                  <>
+                    <span id="modal-channel-number" className="modal-kicker">{channelIdentity}</span>
+                    {channel.name}
+                  </>
+                )}
+              </h2>
+              <p id="modal-channel-meta" className="modal-meta">
+                {channel.is_record_enabled ? 'Rolling capture armed' : 'Rolling capture off'}
+              </p>
+            </div>
           </div>
           <div className="modal-badges">
             <span id="modal-patch-badge" className="info-badge">{getInputLabel(channel)}</span>

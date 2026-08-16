@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { MODAL_WAVEFORM_WINDOW_SECONDS } from '../hooks/useWaveform';
-import { buildWaveformRulerMarks } from '../lib/ui-logic';
+import { buildWaveformRulerMarks, maxPoolValues } from '../lib/ui-logic';
 import type { ChannelWaveformResponse } from '../types/api';
 
 function resizeCanvas(canvas: HTMLCanvasElement): {
@@ -107,53 +107,20 @@ export function WaveformCanvas({
     const baseline = height - 14;
 
     if (values.length > 0 && occupiedWidth > 0) {
-      const chartTop = 10;
+      const chartTop = 8;
       const chartHeight = baseline - chartTop;
+      const barCount = Math.max(1, Math.floor(occupiedWidth / 2));
+      const peaks = maxPoolValues(values, barCount);
+      const barSpan = occupiedWidth / peaks.length;
+      const barWidth = Math.max(1, barSpan * 0.72);
 
-      context.beginPath();
-      context.moveTo(startX, baseline);
-      for (let index = 0; index < values.length; index += 1) {
-        const value = values[index];
-        const x = startX + ((occupiedWidth * index) / Math.max(values.length - 1, 1));
-        const y = baseline - Math.max(1, value * chartHeight);
-        context.lineTo(x, y);
+      context.fillStyle = 'rgba(166, 230, 53, 0.92)';
+      for (let index = 0; index < peaks.length; index += 1) {
+        const value = peaks[index];
+        const x = startX + (index * barSpan);
+        const barHeight = Math.max(1, value * chartHeight);
+        context.fillRect(x, baseline - barHeight, barWidth, barHeight);
       }
-      context.lineTo(startX + occupiedWidth, baseline);
-      context.closePath();
-      context.fillStyle = 'rgba(113, 112, 255, 0.12)';
-      context.fill();
-
-      context.beginPath();
-      for (let index = 0; index < values.length; index += 1) {
-        const value = values[index];
-        const x = startX + ((occupiedWidth * index) / Math.max(values.length - 1, 1));
-        const y = baseline - Math.max(1, value * chartHeight);
-        if (index === 0) {
-          context.moveTo(x, y);
-        } else {
-          context.lineTo(x, y);
-        }
-      }
-      context.strokeStyle = 'rgba(247, 248, 248, 0.94)';
-      context.lineWidth = 1.5;
-      context.stroke();
-
-      context.beginPath();
-      for (let index = 0; index < values.length; index += 1) {
-        const value = values[index];
-        const x = startX + ((occupiedWidth * index) / Math.max(values.length - 1, 1));
-        const y = baseline - Math.max(1, value * chartHeight);
-        if (index === 0) {
-          context.moveTo(x, y);
-        } else {
-          context.lineTo(x, y);
-        }
-      }
-      context.strokeStyle = 'rgba(113, 112, 255, 0.55)';
-      context.lineWidth = 3;
-      context.globalCompositeOperation = 'screen';
-      context.stroke();
-      context.globalCompositeOperation = 'source-over';
     }
 
     if (scrubSeconds > 0) {

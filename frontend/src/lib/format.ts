@@ -61,6 +61,21 @@ export function getInputLabel(channel: Pick<ChannelResponse, 'input_index'>): st
     : `Input ${channel.input_index + 1}`;
 }
 
+export function getChannelInitials(channel: Pick<ChannelResponse, 'name' | 'number'>): string {
+  if (channel.name.trim().toLowerCase() === `channel ${channel.number}`.toLowerCase()) {
+    return String(channel.number).padStart(2, '0');
+  }
+  const words = channel.name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = words
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('');
+  return initials || String(channel.number).padStart(2, '0');
+}
+
 export function isDefaultChannelName(channel: Pick<ChannelResponse, 'name' | 'number'>): boolean {
   return channel.name.trim().toLowerCase() === `channel ${channel.number}`.toLowerCase();
 }

@@ -39,6 +39,7 @@ function getSceneSummary(scene: SceneResponse | null): string {
 function toProgramDraft(channel: ChannelResponse): ProgramChannelDraft {
   return {
     name: channel.name,
+    photo_path: channel.photo_path ?? '',
     input_index: channel.input_index,
     gain_db: clampGainDb(channel.gain_db ?? 0),
     is_record_enabled: channel.is_record_enabled,
@@ -106,6 +107,31 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove }: ProgramR
               scheduleSave(nextDraft);
             }}
             onBlur={() => commitSave()}
+          />
+        </div>
+      </td>
+      <td>
+        <div className="program-photo-field">
+          <span
+            className={`program-photo-preview ${draft.photo_path ? 'has-photo' : ''}`}
+            style={draft.photo_path ? { backgroundImage: `url(${JSON.stringify(draft.photo_path)})` } : undefined}
+            aria-hidden="true"
+          ></span>
+          <input
+            type="text"
+            data-field="photo_path"
+            aria-label={`Photo URL for ${channel.name}`}
+            placeholder="Image URL or /path"
+            value={draft.photo_path}
+            onChange={(event) => {
+              setDraft({ ...draft, photo_path: event.target.value });
+            }}
+            onBlur={() => {
+              const photoPath = draft.photo_path.trim();
+              const nextDraft = { ...draft, photo_path: photoPath };
+              setDraft(nextDraft);
+              void onSave(channel.id, { ...nextDraft, photo_path: photoPath || null });
+            }}
           />
         </div>
       </td>
@@ -640,6 +666,7 @@ export function SetupView({
               <tr>
                 <th>Channel</th>
                 <th>Name</th>
+                <th>Photo</th>
                 <th>Input</th>
                 <th>Trim</th>
                 <th>Record</th>

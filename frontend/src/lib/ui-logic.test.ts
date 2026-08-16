@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   appendMeterHistoryPoint,
+  buildEnergyBarPath,
   buildWaveformRulerMarks,
   buildExternalSyncStatusText,
   calculateWaveformPointShift,
   computeWaveformDisplayPoints,
   getSceneChecklistStats,
   getShowChannelVisualState,
+  maxPoolValues,
   normaliseNumberOrder,
   normaliseActiveView,
   resolveActiveSceneId,
@@ -15,6 +17,18 @@ import {
 } from './ui-logic';
 
 describe('ui-logic helpers', () => {
+  it('max-pools signal history so short transients remain visible', () => {
+    expect(maxPoolValues([0.1, 0.9, 0.2, 0.4], 2)).toEqual([0.9, 0.4]);
+    expect(maxPoolValues([-1, Number.NaN, 2], 3)).toEqual([0, 0, 1]);
+  });
+
+  it('builds a crisp bar path instead of a smoothed signal line', () => {
+    const path = buildEnergyBarPath([0, 1], 2, 100, 24);
+
+    expect(path).toContain('M0.00,23.00V23.00');
+    expect(path).toContain('M50.00,23.00V3.00');
+  });
+
   it('normaliseActiveView preserves new modes and maps legacy names', () => {
     expect(normaliseActiveView('monitor')).toBe('monitor');
     expect(normaliseActiveView('show')).toBe('show');

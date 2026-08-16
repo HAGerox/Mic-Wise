@@ -21,6 +21,7 @@ export interface AppBootstrapData {
 
 export interface ProgramChannelDraft {
   name: string;
+  photo_path: string;
   input_index: number | null;
   gain_db: number;
   is_record_enabled: boolean;

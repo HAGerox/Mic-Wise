@@ -1,7 +1,7 @@
 import type { ActiveView } from '../types/ui';
 
 const MODE_HELP: Record<ActiveView, string> = {
-  monitor: 'Monitor mode shows every RF path with live meters, alerts, and listening controls.',
+  monitor: 'Monitor mode shows every RF path with recent energy, alerts, and listening controls.',
   show: 'Scene mode follows the active scene. Press Y to mark checked, N to reopen, or hold a strip to toggle it.',
   setup: 'Setup mode edits channels, scenes, cue sync, showfile import/export, and system defaults.',
 };
@@ -125,7 +125,7 @@ export function Toolbar({
             <span className="button-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="m4 20 4-1 10-10-3-3L5 16l-1 4Z"></path><path d="m14 6 3 3"></path></svg>
             </span>
-            <span className="button-label">{layoutMode ? 'Lock layout' : 'Arrange strips'}</span>
+            <span className="button-label">{layoutMode ? 'Finish reorder' : 'Reorder channels'}</span>
           </button>
 
           <button
@@ -137,7 +137,7 @@ export function Toolbar({
             <span className="button-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M6 6h12v12H6z"></path></svg>
             </span>
-            <span className="button-label">Clear listen</span>
+            <span className="button-label">Stop listening</span>
           </button>
         </div>
       </div>

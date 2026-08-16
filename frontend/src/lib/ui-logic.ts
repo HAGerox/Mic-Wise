@@ -7,6 +7,47 @@ export interface WaveformRulerMark {
   kind: 'major' | 'minor' | 'live';
 }
 
+export function maxPoolValues(values: number[], targetCount: number): number[] {
+  const safeTargetCount = Math.max(1, Math.floor(targetCount));
+  if (values.length <= safeTargetCount) {
+    return values.map((value) => Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)));
+  }
+
+  return Array.from({ length: safeTargetCount }, (_, index) => {
+    const start = Math.floor((index * values.length) / safeTargetCount);
+    const end = Math.max(start + 1, Math.floor(((index + 1) * values.length) / safeTargetCount));
+    let peak = 0;
+    for (let valueIndex = start; valueIndex < end; valueIndex += 1) {
+      const value = values[valueIndex];
+      peak = Math.max(peak, Number.isFinite(value) ? value : 0);
+    }
+    return Math.min(1, Math.max(0, peak));
+  });
+}
+
+export function buildEnergyBarPath(
+  values: number[],
+  targetCount = 96,
+  width = 100,
+  height = 24,
+): string {
+  const safeTargetCount = Math.max(1, Math.floor(targetCount));
+  const pooledValues = maxPoolValues(values.length > 0 ? values : [0], safeTargetCount);
+  const displayValues = pooledValues.length < safeTargetCount
+    ? [...Array<number>(safeTargetCount - pooledValues.length).fill(0), ...pooledValues]
+    : pooledValues;
+  const baseline = height - 1;
+  const chartHeight = Math.max(1, height - 4);
+  const barSpan = width / displayValues.length;
+  const barWidth = Math.max(0.3, barSpan * 0.72);
+
+  return displayValues.map((value, index) => {
+    const x = index * barSpan;
+    const y = baseline - (value * chartHeight);
+    return `M${x.toFixed(2)},${baseline.toFixed(2)}V${y.toFixed(2)}H${(x + barWidth).toFixed(2)}V${baseline.toFixed(2)}Z`;
+  }).join('');
+}
+
 export function normaliseActiveView(activeMode: string | null | undefined): ActiveView {
   const mode = String(activeMode ?? 'monitor').trim().toLowerCase();
   if (mode === 'configure' || mode === 'program' || mode === 'setup') {

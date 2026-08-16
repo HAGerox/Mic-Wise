@@ -1,20 +1,10 @@
 import { memo, useEffect, useRef } from 'react';
 
-import { formatDbfs } from '../lib/format';
+import { formatDbfs, getChannelInitials, getInputLabel } from '../lib/format';
+import { buildEnergyBarPath } from '../lib/ui-logic';
 import type { ChannelCardState } from '../types/ui';
 
 const LONG_PRESS_MS = 420;
-
-function buildSparklinePoints(history: number[]): string {
-  const safeHistory = history.length > 0 ? history : [0, 0, 0, 0];
-  return safeHistory
-    .map((value, index) => {
-      const x = safeHistory.length === 1 ? 50 : (index / (safeHistory.length - 1)) * 100;
-      const y = 23 - (Math.min(Math.max(value, 0), 1) * 20);
-      return `${x},${y}`;
-    })
-    .join(' ');
-}
 
 function getBadgeMarkup(visualState: ChannelCardState['visualState']): JSX.Element | null {
   if (!visualState) {
@@ -59,8 +49,6 @@ function ChannelCardComponent({
     }
   }, []);
 
-  const clampedRmsRatio = Math.min(Math.max(metrics.rmsRatio, 0), 1);
-
   const clearLongPress = (): void => {
     if (longPressTimerRef.current !== null) {
       window.clearTimeout(longPressTimerRef.current);
@@ -75,8 +63,21 @@ function ChannelCardComponent({
     : visualState === 'off'
       ? 'Muted'
       : isSelected
-        ? 'Armed'
+        ? 'Listening'
         : 'Live';
+  const channelIdentity = `CH ${channel.number.toString().padStart(2, '0')}`;
+  const energyPath = buildEnergyBarPath(metrics.historyRatios);
+  const photoStyle = channel.photo_path
+    ? { backgroundImage: `url(${JSON.stringify(channel.photo_path)})` }
+    : undefined;
+
+  const handleInteraction = (): void => {
+    if (isLayoutMode || longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    onInteract(channel.id);
+  };
 
   return (
     <article
@@ -91,12 +92,16 @@ function ChannelCardComponent({
         `is-status-${statusTone}`,
       ].filter(Boolean).join(' ')}
       data-channel-id={String(channel.id)}
-      onClick={() => {
-        if (isLayoutMode || longPressTriggeredRef.current) {
-          longPressTriggeredRef.current = false;
-          return;
+      role="button"
+      tabIndex={isLayoutMode ? -1 : 0}
+      aria-pressed={isSelected}
+      aria-label={`${channelIdentity} ${channel.name}, ${statusLabel}, peak ${formatDbfs(metrics.peakDbfs)} dBFS`}
+      onClick={handleInteraction}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleInteraction();
         }
-        onInteract(channel.id);
       }}
       onPointerDown={() => {
         if (!isShowMode) {
@@ -113,49 +118,43 @@ function ChannelCardComponent({
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
     >
-      <header className="channel-card-header">
-        <div className="channel-chip-stack">
-          <span className={`channel-status-badge is-${statusTone}`}>{statusLabel}</span>
+      <div className="channel-card-visual">
+        <div className={`channel-photo-layer ${channel.photo_path ? 'has-photo' : ''}`} style={photoStyle}>
+          {!channel.photo_path ? <span>{getChannelInitials(channel)}</span> : null}
         </div>
-        <div className="channel-title-group">
-          <h2 className="channel-name">{channel.name}</h2>
-        </div>
-      </header>
+        <div className="channel-photo-shade"></div>
 
-      <div className="channel-meter-row" aria-label="Live signal level">
-        <div className="meter meter--vertical-shell">
-          <div className="meter meter--vertical">
-            <div className="meter-fill" style={{ height: `${(1 - clampedRmsRatio) * 100}%` }}></div>
-            <div className="meter-peak-line" style={{ bottom: `${metrics.peakRatio * 100}%` }}></div>
-          </div>
-          <div className="meter-scale" aria-hidden="true">
-            <span>0</span>
-            <span>-20</span>
-            <span>-40</span>
-            <span>-60</span>
-          </div>
+        <header className="channel-card-header">
+          <span className="channel-number">{channelIdentity}</span>
+          <span className={`channel-status-badge is-${statusTone}`}>
+            <span className="channel-status-dot" aria-hidden="true"></span>
+            {statusLabel}
+          </span>
+        </header>
+
+        <div className="channel-energy-shell" aria-hidden="true">
+          <svg className="channel-energy" viewBox="0 0 100 24" preserveAspectRatio="none">
+            <path d={energyPath} />
+          </svg>
+          <span className="channel-energy-baseline"></span>
         </div>
 
-        <div className="channel-signal-stack">
-          <div className="channel-sparkline-shell" aria-hidden="true">
-            <svg className="channel-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none">
-              <polyline points={buildSparklinePoints(metrics.historyRatios)} />
-            </svg>
+        <footer className="channel-nameplate">
+          <div className="channel-title-group">
+            <h2 className="channel-name">{channel.name}</h2>
+            <span className="channel-secondary">{getInputLabel(channel)}</span>
           </div>
-
           <div className="channel-meta-row">
-            <div className="channel-meta-copy">
-              {activeAlert ? (
-                <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
-              ) : (
-                <span className="channel-peak-readout" aria-label="Peak level">
-                  {formatDbfs(metrics.peakDbfs)}
-                </span>
-              )}
-            </div>
+            {activeAlert ? (
+              <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
+            ) : (
+              <span className="channel-peak-readout" aria-label="Peak level">
+                {formatDbfs(metrics.peakDbfs)} dBFS
+              </span>
+            )}
             {getBadgeMarkup(visualState)}
           </div>
-        </div>
+        </footer>
       </div>
     </article>
   );

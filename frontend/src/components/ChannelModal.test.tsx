@@ -59,6 +59,28 @@ afterEach(() => {
 });
 
 describe('ChannelModal waveform ruler', () => {
+  it('shows a channel identity image when one is configured', () => {
+    const photoChannel = { ...channel, photo_path: 'https://example.com/vocal-1.jpg' };
+    const { container } = render(
+      <ChannelModal
+        channel={photoChannel}
+        visible={true}
+        combinedGainDb={0}
+        transportStatusText="Live"
+        modalScrubSeconds={0}
+        waveform={null}
+        displayPoints={[]}
+        onClose={vi.fn()}
+        onScrub={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('.modal-channel-photo')).toHaveClass('has-photo');
+    expect(container.querySelector('.modal-channel-photo')).toHaveStyle({
+      backgroundImage: 'url("https://example.com/vocal-1.jpg")',
+    });
+  });
+
   it('shows the channel number inline before a custom channel name', () => {
     renderModal();
 
