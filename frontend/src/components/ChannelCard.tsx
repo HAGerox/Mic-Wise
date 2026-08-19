@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef } from 'react';
 
 import { formatDbfs, getChannelInitials, getInputLabel } from '../lib/format';
-import { buildEnergyBarPath } from '../lib/ui-logic';
+import { buildEnergyLinePath } from '../lib/ui-logic';
 import type { ChannelCardState } from '../types/ui';
 
 const LONG_PRESS_MS = 420;
@@ -66,7 +66,7 @@ function ChannelCardComponent({
         ? 'Listening'
         : 'Live';
   const channelIdentity = `CH ${channel.number.toString().padStart(2, '0')}`;
-  const energyPath = buildEnergyBarPath(metrics.historyRatios);
+  const energyPath = buildEnergyLinePath(metrics.historyRatios);
   const photoStyle = channel.photo_path
     ? { backgroundImage: `url(${JSON.stringify(channel.photo_path)})` }
     : undefined;
@@ -132,11 +132,10 @@ function ChannelCardComponent({
           </span>
         </header>
 
-        <div className="channel-energy-shell" aria-hidden="true">
-          <svg className="channel-energy" viewBox="0 0 100 24" preserveAspectRatio="none">
-            <path d={energyPath} />
+        <div className="channel-signal-shell" aria-hidden="true">
+          <svg className="channel-signal-trace" viewBox="0 0 100 24" preserveAspectRatio="none">
+            <path d={energyPath} vectorEffect="non-scaling-stroke" />
           </svg>
-          <span className="channel-energy-baseline"></span>
         </div>
 
         <footer className="channel-nameplate">

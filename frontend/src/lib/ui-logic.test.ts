@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   appendMeterHistoryPoint,
-  buildEnergyBarPath,
+  buildEnergyLinePath,
   buildWaveformRulerMarks,
   buildExternalSyncStatusText,
   calculateWaveformPointShift,
@@ -22,11 +22,10 @@ describe('ui-logic helpers', () => {
     expect(maxPoolValues([-1, Number.NaN, 2], 3)).toEqual([0, 0, 1]);
   });
 
-  it('builds a crisp bar path instead of a smoothed signal line', () => {
-    const path = buildEnergyBarPath([0, 1], 2, 100, 24);
+  it('builds one continuous signal line across the energy history', () => {
+    const path = buildEnergyLinePath([0, 1], 2, 100, 24);
 
-    expect(path).toContain('M0.00,23.00V23.00');
-    expect(path).toContain('M50.00,23.00V3.00');
+    expect(path).toBe('M0.00,22.00L100.00,2.00');
   });
 
   it('normaliseActiveView preserves new modes and maps legacy names', () => {

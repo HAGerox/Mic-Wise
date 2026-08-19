@@ -69,7 +69,7 @@ afterEach(() => {
 });
 
 describe('ChannelGrid layout ordering', () => {
-  it('uses one image-backed energy view instead of a redundant loudness meter', () => {
+  it('uses one image-backed signal trace instead of a redundant loudness meter', () => {
     const channel = { ...buildChannel(1, 0), photo_path: 'https://example.com/performer.jpg' };
     const { container } = renderGrid([channel], { layoutMode: false });
 
@@ -77,7 +77,7 @@ describe('ChannelGrid layout ordering', () => {
     const photoLayer = container.querySelector('.channel-photo-layer');
 
     expect(card).toBeInTheDocument();
-    expect(container.querySelector('.channel-energy')).toBeInTheDocument();
+    expect(container.querySelector('.channel-signal-trace path')).not.toHaveAttribute('fill');
     expect(container.querySelector('.meter--vertical')).not.toBeInTheDocument();
     expect(photoLayer).toHaveClass('has-photo');
     expect(photoLayer).toHaveStyle({ backgroundImage: 'url("https://example.com/performer.jpg")' });

@@ -25,7 +25,7 @@ export function maxPoolValues(values: number[], targetCount: number): number[] {
   });
 }
 
-export function buildEnergyBarPath(
+export function buildEnergyLinePath(
   values: number[],
   targetCount = 96,
   width = 100,
@@ -36,15 +36,14 @@ export function buildEnergyBarPath(
   const displayValues = pooledValues.length < safeTargetCount
     ? [...Array<number>(safeTargetCount - pooledValues.length).fill(0), ...pooledValues]
     : pooledValues;
-  const baseline = height - 1;
+  const baseline = height - 2;
   const chartHeight = Math.max(1, height - 4);
-  const barSpan = width / displayValues.length;
-  const barWidth = Math.max(0.3, barSpan * 0.72);
+  const pointSpan = displayValues.length > 1 ? width / (displayValues.length - 1) : 0;
 
   return displayValues.map((value, index) => {
-    const x = index * barSpan;
+    const x = index * pointSpan;
     const y = baseline - (value * chartHeight);
-    return `M${x.toFixed(2)},${baseline.toFixed(2)}V${y.toFixed(2)}H${(x + barWidth).toFixed(2)}V${baseline.toFixed(2)}Z`;
+    return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
   }).join('');
 }
 
