@@ -47,11 +47,13 @@ export function Toolbar({
     <section className="controls toolbar">
       <div className="toolbar-main">
         <div className="toolbar-main-left">
-          <div className="control-group segmented-control" role="tablist" aria-label="Main views">
+          <nav className="control-group segmented-control" aria-label="Primary views">
             <button
               id="view-monitor"
               className={`segment-button ${activeView === 'monitor' ? 'is-active' : ''}`}
               type="button"
+              aria-current={activeView === 'monitor' ? 'page' : undefined}
+              aria-controls="monitor-view"
               onClick={() => onSetActiveView('monitor')}
             >
               <span className="button-icon" aria-hidden="true">
@@ -63,6 +65,8 @@ export function Toolbar({
               id="view-show"
               className={`segment-button ${activeView === 'show' ? 'is-active' : ''}`}
               type="button"
+              aria-current={activeView === 'show' ? 'page' : undefined}
+              aria-controls="monitor-view"
               onClick={() => onSetActiveView('show')}
             >
               <span className="button-icon" aria-hidden="true">
@@ -74,6 +78,8 @@ export function Toolbar({
               id="view-setup"
               className={`segment-button ${activeView === 'setup' ? 'is-active' : ''}`}
               type="button"
+              aria-current={activeView === 'setup' ? 'page' : undefined}
+              aria-controls="setup-view"
               onClick={() => onSetActiveView('setup')}
             >
               <span className="button-icon" aria-hidden="true">
@@ -81,10 +87,10 @@ export function Toolbar({
               </span>
               <span className="button-label">Setup</span>
             </button>
-          </div>
+          </nav>
         </div>
 
-        <div id="toolbar-actions" className="control-group button-row toolbar-main-right">
+        <div id="toolbar-actions" className={`control-group button-row toolbar-main-right ${activeView === 'setup' ? 'is-setup-context' : ''}`}>
           <button
             id="listen-mode-toggle"
             type="button"
@@ -112,14 +118,14 @@ export function Toolbar({
 
           <button
             id="stop-listening"
-            className={`secondary is-armed ${selectedCount > 0 ? '' : 'is-hidden'}`}
+            className={`secondary is-armed toolbar-stop-button ${activeView === 'setup' ? 'is-setup-context' : ''} ${selectedCount > 0 ? '' : 'is-hidden'}`}
             type="button"
             onClick={onStopListening}
           >
             <span className="button-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M6 6h12v12H6z"></path></svg>
             </span>
-            <span className="button-label">Stop listening</span>
+            <span className="button-label">{activeView === 'setup' ? 'Stop audio' : 'Stop listening'}</span>
           </button>
         </div>
       </div>

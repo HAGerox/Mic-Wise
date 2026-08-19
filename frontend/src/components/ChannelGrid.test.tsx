@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChannelGrid } from './ChannelGrid';
@@ -147,5 +148,33 @@ describe('ChannelGrid layout ordering', () => {
 
     expect(initialCloseModal).not.toHaveBeenCalled();
     expect(latestCloseModal).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a visible show checklist action without starting a listen', async () => {
+    const user = userEvent.setup();
+    const onInteractChannel = vi.fn();
+    const onToggleChecklist = vi.fn();
+    const channel = buildChannel(1, 0);
+
+    renderGrid([channel], {
+      activeView: 'show',
+      layoutMode: false,
+      activeScene: {
+        id: 4,
+        name: 'Scene 4',
+        order_index: 3,
+        sync_osc_address: null,
+        sync_osc_argument: null,
+        sync_midi_pattern: null,
+        channel_assignments: [{ channel_id: channel.id, state: 'ready' }],
+      },
+      onInteractChannel,
+      onToggleChecklist,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Mark checked: Channel 1' }));
+
+    expect(onToggleChecklist).toHaveBeenCalledWith(channel.id);
+    expect(onInteractChannel).not.toHaveBeenCalled();
   });
 });

@@ -395,6 +395,8 @@ export function SetupView({
               key={section.id}
               type="button"
               className={`setup-nav-item ${setupTab === section.id ? 'is-active' : ''}`}
+              aria-current={setupTab === section.id ? 'page' : undefined}
+              aria-controls={`setup-${section.id}-section`}
               onClick={() => onSetSetupTab(section.id)}
             >
               <strong>{section.label}</strong>
@@ -403,7 +405,7 @@ export function SetupView({
         </nav>
 
         <div className="setup-content">
-          <section className={`setup-section ${setupTab === 'general' ? '' : 'is-hidden'}`}>
+          <section id="setup-general-section" className={`setup-section ${setupTab === 'general' ? '' : 'is-hidden'}`}>
             <div className="setup-overview-grid">
               <section className="panel-card setup-summary-card">
           <div>
@@ -438,7 +440,7 @@ export function SetupView({
               <section className="panel-card setup-summary-card setup-showfile-card">
           <div>
             <h3>Showfile</h3>
-            <p className="setup-helper-text">Export a portable backup before major edits. Import replaces the current channel, scene, and settings state from a Mic-Wise JSON showfile.</p>
+            <p className="setup-helper-text">Export a portable backup, or replace this show with a Mic-Wise showfile.</p>
           </div>
 
           <div className="panel-heading-actions">
@@ -461,7 +463,7 @@ export function SetupView({
           </div>
               </section>
 
-              <section className="panel-card setup-summary-card">
+              <section className="panel-card setup-summary-card setup-audio-card">
           <div>
             <h3>Audio engine</h3>
           </div>
@@ -486,24 +488,25 @@ export function SetupView({
               </select>
             </label>
 
-            <label className="field-group" htmlFor="audio-input-device">
-              <span>Input device</span>
-              <select
-                id="audio-input-device"
-                disabled={runtimeForm.audio_source_mode !== 'sounddevice'}
-                value={runtimeForm.audio_input_device}
-                onChange={(event) => {
-                  const nextDevice = event.target.value;
-                  setRuntimeForm({ ...runtimeForm, audio_input_device: nextDevice });
-                  void onSaveSettings({ audio_input_device: nextDevice || null });
-                }}
-              >
-                <option value="">Auto / system default</option>
-                {audioDevices.map((device) => (
-                  <option key={device.selector} value={device.selector}>{device.display_name}</option>
-                ))}
-              </select>
-            </label>
+            {runtimeForm.audio_source_mode === 'sounddevice' ? (
+              <label className="field-group" htmlFor="audio-input-device">
+                <span>Input device</span>
+                <select
+                  id="audio-input-device"
+                  value={runtimeForm.audio_input_device}
+                  onChange={(event) => {
+                    const nextDevice = event.target.value;
+                    setRuntimeForm({ ...runtimeForm, audio_input_device: nextDevice });
+                    void onSaveSettings({ audio_input_device: nextDevice || null });
+                  }}
+                >
+                  <option value="">Auto / system default</option>
+                  {audioDevices.map((device) => (
+                    <option key={device.selector} value={device.selector}>{device.display_name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <label className="field-group" htmlFor="audio-channel-count">
               <span>Input channels</span>
@@ -523,74 +526,85 @@ export function SetupView({
               />
             </label>
 
-            <label className="field-group" htmlFor="audio-sample-rate">
-              <span>Sample rate</span>
-              <input
-                id="audio-sample-rate"
-                type="number"
-                min={8_000}
-                max={192_000}
-                step={1}
-                value={runtimeForm.sample_rate}
-                onChange={(event) => {
-                  setRuntimeForm({ ...runtimeForm, sample_rate: Math.max(8_000, Number(event.target.value || 48_000)) });
-                }}
-                onBlur={() => {
-                  void onSaveSettings({ sample_rate: runtimeForm.sample_rate });
-                }}
-              />
-            </label>
-
-            <label className="field-group" htmlFor="audio-block-size">
-              <span>Block size</span>
-              <input
-                id="audio-block-size"
-                type="number"
-                min={64}
-                max={4_096}
-                step={1}
-                value={runtimeForm.block_size}
-                onChange={(event) => {
-                  setRuntimeForm({ ...runtimeForm, block_size: Math.max(64, Number(event.target.value || 480)) });
-                }}
-                onBlur={() => {
-                  void onSaveSettings({ block_size: runtimeForm.block_size });
-                }}
-              />
-            </label>
-
-            <label className="field-group" htmlFor="audio-buffer-duration">
-              <span>History window</span>
-              <input
-                id="audio-buffer-duration"
-                type="number"
-                min={60}
-                max={900}
-                step={1}
-                value={runtimeForm.buffer_duration_sec}
-                onChange={(event) => {
-                  setRuntimeForm({
-                    ...runtimeForm,
-                    buffer_duration_sec: Math.max(60, Number(event.target.value || 300)),
-                  });
-                }}
-                onBlur={() => {
-                  void onSaveSettings({ buffer_duration_sec: runtimeForm.buffer_duration_sec });
-                }}
-              />
-            </label>
           </div>
 
+          <details className="settings-disclosure">
+            <summary>
+              <span>Advanced audio settings</span>
+              <small>Sample rate, block size and history</small>
+            </summary>
+            <div className="scene-sync-settings-grid settings-disclosure-content">
+              <label className="field-group" htmlFor="audio-sample-rate">
+                <span>Sample rate</span>
+                <input
+                  id="audio-sample-rate"
+                  type="number"
+                  min={8_000}
+                  max={192_000}
+                  step={1}
+                  value={runtimeForm.sample_rate}
+                  onChange={(event) => {
+                    setRuntimeForm({ ...runtimeForm, sample_rate: Math.max(8_000, Number(event.target.value || 48_000)) });
+                  }}
+                  onBlur={() => {
+                    void onSaveSettings({ sample_rate: runtimeForm.sample_rate });
+                  }}
+                />
+              </label>
+
+              <label className="field-group" htmlFor="audio-block-size">
+                <span>Block size</span>
+                <input
+                  id="audio-block-size"
+                  type="number"
+                  min={64}
+                  max={4_096}
+                  step={1}
+                  value={runtimeForm.block_size}
+                  onChange={(event) => {
+                    setRuntimeForm({ ...runtimeForm, block_size: Math.max(64, Number(event.target.value || 480)) });
+                  }}
+                  onBlur={() => {
+                    void onSaveSettings({ block_size: runtimeForm.block_size });
+                  }}
+                />
+              </label>
+
+              <label className="field-group" htmlFor="audio-buffer-duration">
+                <span>History window</span>
+                <input
+                  id="audio-buffer-duration"
+                  type="number"
+                  min={60}
+                  max={900}
+                  step={1}
+                  value={runtimeForm.buffer_duration_sec}
+                  onChange={(event) => {
+                    setRuntimeForm({
+                      ...runtimeForm,
+                      buffer_duration_sec: Math.max(60, Number(event.target.value || 300)),
+                    });
+                  }}
+                  onBlur={() => {
+                    void onSaveSettings({ buffer_duration_sec: runtimeForm.buffer_duration_sec });
+                  }}
+                />
+              </label>
+            </div>
+          </details>
+
           <p className="setup-helper-text">
-            {selectedDevice
-              ? `${selectedDevice.max_input_channels} inputs available on ${selectedDevice.hostapi_name} · default ${selectedDevice.default_sample_rate} Hz`
-              : 'Use Auto to follow the system default interface, or lock Mic-Wise to a specific capture device.'}
+            {runtimeForm.audio_source_mode !== 'sounddevice'
+              ? 'Synthetic audio is useful for setup and testing without connected hardware.'
+              : selectedDevice
+                ? `${selectedDevice.max_input_channels} inputs available on ${selectedDevice.hostapi_name} · default ${selectedDevice.default_sample_rate} Hz`
+                : 'Auto follows the system default input device.'}
           </p>
               </section>
             </div>
           </section>
 
-          <section id="setup-program-panel" className={`setup-panel panel-card ${setupTab === 'channels' ? '' : 'is-hidden'}`}>
+          <section id="setup-channels-section" className={`setup-panel panel-card ${setupTab === 'channels' ? '' : 'is-hidden'}`}>
         <div className="panel-heading panel-heading--nested">
           <div>
             <h3>Channel patch sheet</h3>
@@ -628,7 +642,7 @@ export function SetupView({
         </div>
           </section>
 
-          <section id="setup-scenes-panel" className={`setup-panel panel-card ${setupTab === 'scenes' ? '' : 'is-hidden'}`}>
+          <section id="setup-scenes-section" className={`setup-panel panel-card ${setupTab === 'scenes' ? '' : 'is-hidden'}`}>
         <div className="panel-heading panel-heading--nested">
           <div>
             <h3>Scene map</h3>
@@ -695,10 +709,11 @@ export function SetupView({
                 </div>
               </div>
 
-              <section className="scene-sync-card">
-                <div>
-                  <h3>Scene cue mapping</h3>
-                </div>
+              <details className="settings-disclosure scene-cue-disclosure">
+                <summary>
+                  <span>Scene cue mapping</span>
+                  <small>Optional OSC or MIDI trigger</small>
+                </summary>
                 <div className="scene-sync-grid">
                   <label className="field-group" htmlFor="scene-sync-osc-address">
                     <span>OSC address</span>
@@ -764,7 +779,7 @@ export function SetupView({
                     />
                   </label>
                 </div>
-              </section>
+              </details>
 
               <section className="scene-status-programmer" aria-labelledby="scene-status-programmer-title">
                 <div className="scene-status-programmer-header">
@@ -821,14 +836,14 @@ export function SetupView({
         </div>
           </section>
 
-          <section className={`setup-section ${setupTab === 'automation' ? '' : 'is-hidden'}`}>
+          <section id="setup-automation-section" className={`setup-section ${setupTab === 'automation' ? '' : 'is-hidden'}`}>
             <div className="setup-overview-grid">
               <section className="scene-sync-settings-panel panel-card">
           <div>
             <h3>External scene sync</h3>
           </div>
 
-          <div className="scene-sync-settings-grid">
+          <div className="integration-toggle-row">
             <label className="field-group field-group--toggle" htmlFor="external-sync-enabled">
               <span>Enabled</span>
               <input
@@ -848,7 +863,10 @@ export function SetupView({
                 }}
               />
             </label>
+          </div>
 
+          {externalSyncForm.external_sync_enabled ? (
+            <div className="scene-sync-settings-grid">
             <label className="field-group" htmlFor="external-sync-transport">
               <span>Transport</span>
               <select
@@ -876,6 +894,8 @@ export function SetupView({
               </select>
             </label>
 
+            {externalSyncForm.external_sync_transport === 'osc' || externalSyncForm.external_sync_transport === 'both' ? (
+              <>
             <label className="field-group" htmlFor="external-sync-osc-host">
               <span>OSC host</span>
               <input
@@ -924,7 +944,10 @@ export function SetupView({
                 }}
               />
             </label>
+              </>
+            ) : null}
 
+            {externalSyncForm.external_sync_transport === 'midi' || externalSyncForm.external_sync_transport === 'both' ? (
             <label className="field-group" htmlFor="external-sync-midi-input-name">
               <span>MIDI input name</span>
               <input
@@ -946,7 +969,9 @@ export function SetupView({
                 }}
               />
             </label>
-          </div>
+            ) : null}
+            </div>
+          ) : null}
 
           <p id="external-sync-status" className="scene-sync-status">{buildExternalSyncStatusText(syncStatus)}</p>
               </section>
@@ -956,11 +981,13 @@ export function SetupView({
             <h3>RChat</h3>
           </div>
 
-          <div className="panel-heading-actions">
-            <button type="button" className="secondary" onClick={() => void onTestRChat()}>Test RChat</button>
-          </div>
+          {alertsForm.rchat_enabled ? (
+            <div className="panel-heading-actions">
+              <button type="button" className="secondary" onClick={() => void onTestRChat()}>Send test message</button>
+            </div>
+          ) : null}
 
-          <div className="scene-sync-settings-grid">
+          <div className="integration-toggle-row">
             <label className="field-group field-group--toggle" htmlFor="rchat-enabled">
               <span>Send to RChat</span>
               <input
@@ -980,7 +1007,10 @@ export function SetupView({
                 }}
               />
             </label>
+          </div>
 
+          {alertsForm.rchat_enabled ? (
+            <div className="scene-sync-settings-grid">
             <label className="field-group field-group--toggle" htmlFor="rchat-flash-enabled">
               <span>Flash message</span>
               <input
@@ -1075,7 +1105,8 @@ export function SetupView({
                 ))}
               </select>
             </label>
-          </div>
+            </div>
+          ) : null}
 
               </section>
             </div>

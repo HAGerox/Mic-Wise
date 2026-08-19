@@ -6,19 +6,6 @@ import type { ChannelCardState } from '../types/ui';
 
 const LONG_PRESS_MS = 420;
 
-function getBadgeMarkup(visualState: ChannelCardState['visualState']): JSX.Element | null {
-  if (!visualState) {
-    return null;
-  }
-  if (visualState === 'off') {
-    return <span className="tag tag--scene-muted">Muted</span>;
-  }
-  if (visualState === 'checked') {
-    return <span className="tag tag--scene-checked">Checked</span>;
-  }
-  return <span className="tag tag--scene-pending">Ready</span>;
-}
-
 interface ChannelCardProps {
   state: ChannelCardState;
   onInteract: (channelId: number) => void;
@@ -92,17 +79,6 @@ function ChannelCardComponent({
         `is-status-${statusTone}`,
       ].filter(Boolean).join(' ')}
       data-channel-id={String(channel.id)}
-      role="button"
-      tabIndex={isLayoutMode ? -1 : 0}
-      aria-pressed={isSelected}
-      aria-label={`${channelIdentity} ${channel.name}, ${statusLabel}, peak ${formatDbfs(metrics.peakDbfs)} dBFS`}
-      onClick={handleInteraction}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          handleInteraction();
-        }
-      }}
       onPointerDown={() => {
         if (!isShowMode) {
           return;
@@ -118,6 +94,14 @@ function ChannelCardComponent({
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
     >
+      <button
+        type="button"
+        className="channel-card-listen-target"
+        disabled={isLayoutMode}
+        aria-pressed={isSelected}
+        aria-label={`${channelIdentity} ${channel.name}, ${statusLabel}, peak ${formatDbfs(metrics.peakDbfs)} dBFS`}
+        onClick={handleInteraction}
+      />
       <div className="channel-card-visual">
         <div className={`channel-photo-layer ${channel.photo_path ? 'has-photo' : ''}`} style={photoStyle}>
           {!channel.photo_path ? <span>{getChannelInitials(channel)}</span> : null}
@@ -140,7 +124,28 @@ function ChannelCardComponent({
               <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
             </div>
           ) : visualState ? (
-            <div className="channel-meta-row">{getBadgeMarkup(visualState)}</div>
+            <div className="channel-meta-row">
+              {visualState === 'off' ? (
+                <span className="tag tag--scene-muted">Muted</span>
+              ) : (
+                <button
+                  type="button"
+                  className={`tag channel-check-action ${visualState === 'checked' ? 'tag--scene-checked' : 'tag--scene-pending'}`}
+                  aria-pressed={visualState === 'checked'}
+                  aria-label={`${visualState === 'checked' ? 'Mark unchecked' : 'Mark checked'}: ${channel.name}`}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    clearLongPress();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleChecklist(channel.id);
+                  }}
+                >
+                  {visualState === 'checked' ? 'Checked' : 'Check'}
+                </button>
+              )}
+            </div>
           ) : null}
         </footer>
       </div>

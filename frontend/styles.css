@@ -40,6 +40,7 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  --control-height: 38px;
 }
 
 * {
@@ -118,7 +119,8 @@ button {
   appearance: none;
   border: 1px solid var(--border-standard);
   border-radius: var(--radius-sm);
-  padding: 9px 12px;
+  min-height: var(--control-height);
+  padding: 8px 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -182,6 +184,10 @@ button.is-armed {
   color: #fecaca;
 }
 
+.toolbar-stop-button.is-setup-context {
+  background: transparent;
+}
+
 .button-danger {
   border-color: rgba(239, 68, 68, 0.3);
   background: var(--danger-surface);
@@ -192,7 +198,8 @@ input:not([type="checkbox"]),
 select,
 textarea {
   width: 100%;
-  padding: 9px 11px;
+  min-height: var(--control-height);
+  padding: 8px 10px;
   border: 1px solid var(--border-standard);
   border-radius: var(--radius-sm);
   background: var(--bg-recessed);
@@ -225,6 +232,7 @@ textarea::placeholder {
 .icon-button {
   width: 32px;
   height: 32px;
+  min-height: 32px;
   padding: 0;
   border-radius: var(--radius-sm);
   flex: 0 0 auto;
@@ -835,6 +843,7 @@ body.monitor-view-active .monitor-dock {
 }
 
 .channel-card {
+  position: relative;
   min-height: 166px;
   display: block;
   padding: 0;
@@ -843,16 +852,44 @@ body.monitor-view-active .monitor-dock {
   outline: none;
 }
 
-.channel-card:focus-visible {
+.channel-card:focus-within {
   border-color: rgba(113, 112, 255, 0.56);
   box-shadow: var(--focus-ring);
 }
 
+.channel-card-listen-target {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+}
+
+.channel-card-listen-target:hover:not(:disabled),
+.channel-card-listen-target:active:not(:disabled),
+.channel-card-listen-target:focus-visible {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.channel-card-listen-target:disabled {
+  pointer-events: none;
+}
+
 .channel-card-visual {
   position: relative;
+  z-index: 5;
   min-height: 164px;
   isolation: isolate;
   overflow: hidden;
+  pointer-events: none;
 }
 
 .channel-photo-layer,
@@ -990,6 +1027,21 @@ body.monitor-view-active .monitor-dock {
 .channel-nameplate .channel-alert-badge {
   padding: 3px 5px;
   font-size: 9px;
+}
+
+.channel-check-action {
+  position: relative;
+  z-index: 6;
+  min-height: 24px;
+  cursor: pointer;
+  pointer-events: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.channel-check-action:hover:not(:disabled) {
+  border-color: currentColor;
+  color: var(--text-primary);
 }
 
 .modal-identity {
@@ -1308,6 +1360,10 @@ body.monitor-view-active .monitor-dock {
   align-content: start;
 }
 
+.setup-audio-card {
+  grid-column: 1 / -1;
+}
+
 .setup-nav-item strong,
 .scene-list-item strong {
   color: var(--text-primary);
@@ -1411,6 +1467,72 @@ body.monitor-view-active .monitor-dock {
   height: 16px;
   margin: 0;
   accent-color: var(--accent);
+}
+
+.integration-toggle-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px);
+}
+
+.settings-disclosure {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.settings-disclosure summary {
+  min-height: var(--control-height);
+  padding: 9px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 510;
+}
+
+.settings-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-disclosure summary::after {
+  content: "+";
+  color: var(--text-muted);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.settings-disclosure[open] summary::after {
+  content: "−";
+}
+
+.settings-disclosure summary:hover {
+  background: var(--bg-interactive-hover);
+  color: var(--text-primary);
+}
+
+.settings-disclosure summary:focus-visible {
+  outline: none;
+  box-shadow: inset var(--focus-ring);
+}
+
+.settings-disclosure summary small {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.settings-disclosure-content,
+.scene-cue-disclosure > .scene-sync-grid {
+  padding: 11px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-recessed);
 }
 
 .gain-input-field {
@@ -1550,10 +1672,25 @@ body.monitor-view-active .monitor-dock {
 .scene-list-item {
   width: 100%;
   padding: 10px 12px;
+  display: grid;
+  justify-items: start;
+  gap: 3px;
   text-align: left;
   border-radius: var(--radius-sm);
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
+}
+
+.program-table .button-danger {
+  border-color: var(--border-subtle);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.program-table .button-danger:hover:not(:disabled) {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: var(--danger-surface);
+  color: #fecaca;
 }
 
 .scene-empty-state {
@@ -1804,8 +1941,6 @@ body.monitor-view-active .monitor-dock {
 
 @media (max-width: 1320px) {
   .setup-shell,
-  .setup-overview-grid,
-  .scenes-layout,
   .inspector-layout {
     grid-template-columns: 1fr;
   }
@@ -1823,6 +1958,16 @@ body.monitor-view-active .monitor-dock {
 
   .app-shell {
     padding-top: 10px;
+  }
+
+  .setup-overview-grid,
+  .scenes-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-list-panel,
+  .scene-editor-panel {
+    min-height: 0;
   }
 
   .toolbar-main,
@@ -1876,6 +2021,18 @@ body.monitor-view-active .monitor-dock {
     width: 100%;
   }
 
+  .toolbar-main-right.is-setup-context {
+    width: auto;
+    margin-left: auto;
+  }
+
+  .toolbar-main-right.is-setup-context > .toolbar-stop-button {
+    flex: 0 0 auto;
+    min-height: 32px;
+    padding-block: 6px;
+    background: transparent;
+  }
+
   .segmented-control {
     width: 100%;
     justify-content: space-between;
@@ -1887,6 +2044,33 @@ body.monitor-view-active .monitor-dock {
 
   .toolbar-main-right > button {
     flex: 1 1 0;
+  }
+
+  .setup-nav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .setup-nav-item {
+    min-width: 0;
+    justify-content: center;
+    padding-inline: 6px;
+    font-size: 12px;
+  }
+
+  .setup-nav-item strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .integration-toggle-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-disclosure summary small {
+    display: none;
   }
 
   .toolbar-status-strip {
