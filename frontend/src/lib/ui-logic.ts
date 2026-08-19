@@ -1,6 +1,75 @@
 import type { SceneResponse, SceneSyncStatusResponse } from '../types/api';
 import type { ActiveView, ShowChannelVisualState } from '../types/ui';
 
+interface ChannelSelectionRequest {
+  orderedChannelIds: number[];
+  selectedChannelIds: ReadonlySet<number>;
+  anchorChannelId: number | null;
+  channelId: number;
+  additive: boolean;
+  range: boolean;
+}
+
+export interface ChannelSelectionResult {
+  selectedChannelIds: number[];
+  anchorChannelId: number | null;
+}
+
+export function getChannelSelectionAfterInteraction({
+  orderedChannelIds,
+  selectedChannelIds,
+  anchorChannelId,
+  channelId,
+  additive,
+  range,
+}: ChannelSelectionRequest): ChannelSelectionResult {
+  const validOrderedIds = orderedChannelIds.filter((id, index) => (
+    Number.isInteger(id) && orderedChannelIds.indexOf(id) === index
+  ));
+  if (!validOrderedIds.includes(channelId)) {
+    return {
+      selectedChannelIds: validOrderedIds.filter((id) => selectedChannelIds.has(id)),
+      anchorChannelId,
+    };
+  }
+
+  if (range) {
+    const fallbackAnchor = validOrderedIds.find((id) => selectedChannelIds.has(id)) ?? channelId;
+    const resolvedAnchor = anchorChannelId !== null && validOrderedIds.includes(anchorChannelId)
+      ? anchorChannelId
+      : fallbackAnchor;
+    const startIndex = validOrderedIds.indexOf(resolvedAnchor);
+    const endIndex = validOrderedIds.indexOf(channelId);
+    const rangeStart = Math.min(startIndex, endIndex);
+    const rangeEnd = Math.max(startIndex, endIndex);
+    const nextSelection = new Set<number>(selectedChannelIds);
+    validOrderedIds.slice(rangeStart, rangeEnd + 1).forEach((id) => nextSelection.add(id));
+    return {
+      selectedChannelIds: validOrderedIds.filter((id) => nextSelection.has(id)),
+      anchorChannelId: resolvedAnchor,
+    };
+  }
+
+  if (additive) {
+    const nextSelection = new Set<number>(selectedChannelIds);
+    if (nextSelection.has(channelId)) {
+      nextSelection.delete(channelId);
+    } else {
+      nextSelection.add(channelId);
+    }
+    return {
+      selectedChannelIds: validOrderedIds.filter((id) => nextSelection.has(id)),
+      anchorChannelId: channelId,
+    };
+  }
+
+  const shouldClear = selectedChannelIds.size === 1 && selectedChannelIds.has(channelId);
+  return {
+    selectedChannelIds: shouldClear ? [] : [channelId],
+    anchorChannelId: channelId,
+  };
+}
+
 export interface WaveformRulerMark {
   position: number;
   label: string | null;

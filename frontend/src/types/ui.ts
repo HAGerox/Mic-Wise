@@ -12,6 +12,11 @@ export type ShowChannelVisualState = 'off' | 'pending' | 'checked';
 export type SceneChecklistById = Map<number, Set<number>>;
 export type AudioInputSource = [inputIndex: number, gainDb: number];
 
+export interface ChannelSelectionModifiers {
+  additive: boolean;
+  range: boolean;
+}
+
 export interface AppBootstrapData {
   settings: SettingsResponse;
   channels: ChannelResponse[];
@@ -52,8 +57,7 @@ export interface ChannelCardState {
   metrics: ChannelVisualMetrics;
   activeAlert: AudioAlertResponse | null;
   isSelected: boolean;
-  isLayoutMode: boolean;
-  isShowMode: boolean;
+  canReorder: boolean;
   visualState: ShowChannelVisualState | null;
   statusTone: ChannelStatusTone;
 }

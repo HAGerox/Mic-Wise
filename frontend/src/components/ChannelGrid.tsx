@@ -6,7 +6,7 @@ import { ChannelCard } from './ChannelCard';
 import { dbToLinearGain, meterRatioFromLinear, linearToDbfs, sortChannels } from '../lib/format';
 import { getShowChannelVisualState } from '../lib/ui-logic';
 import type { AudioAlertResponse, ChannelResponse, MeterChannelSnapshot, SceneResponse } from '../types/api';
-import type { ActiveView, ChannelCardState, ChannelStatusTone, ShowChannelVisualState } from '../types/ui';
+import type { ActiveView, ChannelCardState, ChannelSelectionModifiers, ChannelStatusTone, ShowChannelVisualState } from '../types/ui';
 
 function getSceneAssignmentState(scene: SceneResponse | null, channelId: number): string {
   if (!scene) {
@@ -56,11 +56,10 @@ interface ChannelGridProps {
   activeAlertsByChannelId: Map<number, AudioAlertResponse>;
   selectedChannelIds: Set<number>;
   activeView: ActiveView;
-  layoutMode: boolean;
   activeScene: SceneResponse | null;
   checklist: Set<number>;
   masterGainDb: number;
-  onInteractChannel: (channelId: number) => void;
+  onInteractChannel: (channelId: number, modifiers: ChannelSelectionModifiers) => void;
   onToggleChecklist: (channelId: number) => void;
   onPersistOrder: (orderedIds: number[]) => Promise<void>;
   onCloseModal: () => void;
@@ -73,7 +72,6 @@ export function ChannelGrid({
   activeAlertsByChannelId,
   selectedChannelIds,
   activeView,
-  layoutMode,
   activeScene,
   checklist,
   masterGainDb,
@@ -117,8 +115,7 @@ export function ChannelGrid({
         },
         activeAlert,
         isSelected,
-        isLayoutMode: layoutMode,
-        isShowMode: activeView === 'show',
+        canReorder: activeView === 'monitor',
         visualState,
         statusTone: getStatusTone(visualState, isSelected, activeAlert),
       };
@@ -128,7 +125,6 @@ export function ChannelGrid({
     activeScene,
     activeView,
     checklist,
-    layoutMode,
     masterGainDb,
     meterHistoryMap,
     meterMap,
@@ -149,43 +145,53 @@ export function ChannelGrid({
 
     if (!sortableRef.current) {
       sortableRef.current = Sortable.create(gridElement, {
-        animation: 120,
-        easing: 'cubic-bezier(0.2, 0.9, 0.2, 1)',
+        animation: 180,
+        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
         draggable: '.channel-card',
+        handle: '.channel-reorder-handle',
         dataIdAttr: 'data-channel-id',
         ghostClass: 'channel-card--ghost',
         chosenClass: 'channel-card--chosen',
         dragClass: 'channel-card--dragging',
         fallbackClass: 'channel-card--fallback',
         forceFallback: true,
-        fallbackOnBody: false,
+        fallbackOnBody: true,
         fallbackTolerance: 4,
         swapThreshold: 0.72,
         invertedSwapThreshold: 0.78,
         touchStartThreshold: 4,
-        disabled: !layoutMode || activeView !== 'monitor',
+        disabled: activeView !== 'monitor',
+        onChoose: () => {
+          gridElement.classList.add('is-reordering');
+        },
+        onUnchoose: () => {
+          gridElement.classList.remove('is-reordering');
+        },
         onStart: () => {
           onCloseModalRef.current();
         },
-        onEnd: async (event) => {
-          const orderedIds = Array.from(event.to.children)
-            .map((child) => Number((child as HTMLElement).dataset.channelId ?? Number.NaN))
-            .filter(Number.isInteger);
-          await onPersistOrderRef.current(orderedIds);
+        onEnd: async () => {
+          const orderedIds = sortableRef.current?.toArray().map(Number) ?? [];
+          try {
+            await onPersistOrderRef.current(orderedIds);
+          } finally {
+            gridElement.classList.remove('is-reordering');
+          }
         },
       });
     }
 
-    sortableRef.current.option('disabled', !layoutMode || activeView !== 'monitor');
+    sortableRef.current.option('disabled', activeView !== 'monitor');
 
     return () => {
       if (sortableRef.current) {
         sortableRef.current.option('disabled', true);
       }
     };
-  }, [activeView, layoutMode]);
+  }, [activeView]);
 
   useEffect(() => () => {
+    gridRef.current?.classList.remove('is-reordering');
     sortableRef.current?.destroy();
     sortableRef.current = null;
   }, []);

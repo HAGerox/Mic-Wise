@@ -7,12 +7,23 @@ import type { ChannelResponse } from '../types/api';
 
 const sortableMock = vi.hoisted(() => ({
   options: null as {
+    handle?: string;
+    disabled?: boolean;
+    animation?: number;
+    easing?: string;
+    fallbackOnBody?: boolean;
+    fallbackTolerance?: number;
+    swapThreshold?: number;
+    invertedSwapThreshold?: number;
+    onChoose?: () => void;
+    onUnchoose?: () => void;
     onStart?: () => void;
-    onEnd?: (event: { to: HTMLElement }) => Promise<void>;
+    onEnd?: () => Promise<void>;
   } | null,
   instance: {
     option: vi.fn(),
     destroy: vi.fn(),
+    toArray: vi.fn(),
   },
 }));
 
@@ -48,7 +59,6 @@ function renderGrid(channels: ChannelResponse[], overrides: Partial<Parameters<t
     activeAlertsByChannelId: new Map(),
     selectedChannelIds: new Set(),
     activeView: 'monitor',
-    layoutMode: true,
     activeScene: null,
     checklist: new Set(),
     masterGainDb: 0,
@@ -66,13 +76,14 @@ afterEach(() => {
   sortableMock.options = null;
   sortableMock.instance.option.mockClear();
   sortableMock.instance.destroy.mockClear();
+  sortableMock.instance.toArray.mockReset();
   vi.clearAllMocks();
 });
 
 describe('ChannelGrid layout ordering', () => {
   it('uses one image-backed signal trace instead of a redundant loudness meter', () => {
     const channel = { ...buildChannel(1, 0), photo_path: 'https://example.com/performer.jpg' };
-    const { container } = renderGrid([channel], { layoutMode: false });
+    const { container } = renderGrid([channel]);
 
     const card = screen.getByRole('button', { name: /CH 01 Channel 1, Live/ });
     const photoLayer = container.querySelector('.channel-photo-layer');
@@ -90,17 +101,16 @@ describe('ChannelGrid layout ordering', () => {
   it('persists dropped strip order with the latest callback after channels load', async () => {
     const initialPersistOrder = vi.fn().mockResolvedValue(undefined);
     const latestPersistOrder = vi.fn().mockResolvedValue(undefined);
-    const { container, rerender } = renderGrid([], { onPersistOrder: initialPersistOrder });
+    const { rerender } = renderGrid([], { onPersistOrder: initialPersistOrder });
 
     rerender(
       <ChannelGrid
-        channels={[buildChannel(1, 0), buildChannel(2, 1)]}
+        channels={[buildChannel(1, 0), buildChannel(2, 1), buildChannel(3, 2)]}
         meterMap={new Map()}
         meterHistoryMap={new Map()}
         activeAlertsByChannelId={new Map()}
         selectedChannelIds={new Set()}
         activeView="monitor"
-        layoutMode={true}
         activeScene={null}
         checklist={new Set()}
         masterGainDb={0}
@@ -113,11 +123,13 @@ describe('ChannelGrid layout ordering', () => {
 
     expect(screen.getByText('Channel 1')).toBeInTheDocument();
     expect(screen.getByText('Channel 2')).toBeInTheDocument();
+    expect(screen.getByText('Channel 3')).toBeInTheDocument();
 
-    await sortableMock.options?.onEnd?.({ to: container.querySelector('#channel-grid') as HTMLElement });
+    sortableMock.instance.toArray.mockReturnValue(['1', '3', '2']);
+    await sortableMock.options?.onEnd?.();
 
     expect(initialPersistOrder).not.toHaveBeenCalled();
-    expect(latestPersistOrder).toHaveBeenCalledWith([1, 2]);
+    expect(latestPersistOrder).toHaveBeenCalledWith([1, 3, 2]);
   });
 
   it('closes the modal with the latest callback when dragging starts', () => {
@@ -133,7 +145,6 @@ describe('ChannelGrid layout ordering', () => {
         activeAlertsByChannelId={new Map()}
         selectedChannelIds={new Set()}
         activeView="monitor"
-        layoutMode={true}
         activeScene={null}
         checklist={new Set()}
         masterGainDb={0}
@@ -150,6 +161,31 @@ describe('ChannelGrid layout ordering', () => {
     expect(latestCloseModal).toHaveBeenCalledTimes(1);
   });
 
+  it('uses an always-available handle instead of a reorder mode', () => {
+    const { container } = renderGrid([buildChannel(1, 0)]);
+
+    expect(sortableMock.options?.handle).toBe('.channel-reorder-handle');
+    expect(sortableMock.options?.disabled).toBe(false);
+    expect(sortableMock.options?.animation).toBe(180);
+    expect(sortableMock.options?.easing).toBe('cubic-bezier(0.22, 1, 0.36, 1)');
+    expect(sortableMock.options?.fallbackOnBody).toBe(true);
+    expect(sortableMock.options?.fallbackTolerance).toBe(4);
+    expect(sortableMock.options?.swapThreshold).toBe(0.72);
+    expect(sortableMock.options?.invertedSwapThreshold).toBe(0.78);
+    expect(container.querySelector('.channel-reorder-handle')).toBeInTheDocument();
+  });
+
+  it('disables full-card pointer targets while Sortable is hit-testing insertions', () => {
+    const { container } = renderGrid([buildChannel(1, 0), buildChannel(2, 1)]);
+    const grid = container.querySelector('#channel-grid') as HTMLElement;
+
+    sortableMock.options?.onChoose?.();
+    expect(grid).toHaveClass('is-reordering');
+
+    sortableMock.options?.onUnchoose?.();
+    expect(grid).not.toHaveClass('is-reordering');
+  });
+
   it('offers a visible show checklist action without starting a listen', async () => {
     const user = userEvent.setup();
     const onInteractChannel = vi.fn();
@@ -158,7 +194,6 @@ describe('ChannelGrid layout ordering', () => {
 
     renderGrid([channel], {
       activeView: 'show',
-      layoutMode: false,
       activeScene: {
         id: 4,
         name: 'Scene 4',

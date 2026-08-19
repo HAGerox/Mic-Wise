@@ -2,8 +2,6 @@ import type { ActiveView } from '../types/ui';
 
 interface ToolbarProps {
   activeView: ActiveView;
-  layoutMode: boolean;
-  multiListen: boolean;
   selectedCount: number;
   statusText: string;
   activeSceneName: string;
@@ -13,16 +11,12 @@ interface ToolbarProps {
   canGoToPreviousScene: boolean;
   canGoToNextScene: boolean;
   onSetActiveView: (view: ActiveView) => void;
-  onToggleListenMode: () => void;
-  onToggleLayoutMode: () => void;
   onStopListening: () => void;
   onNavigateScene: (offset: number) => void;
 }
 
 export function Toolbar({
   activeView,
-  layoutMode,
-  multiListen,
   selectedCount,
   statusText,
   activeSceneName,
@@ -32,19 +26,13 @@ export function Toolbar({
   canGoToPreviousScene,
   canGoToNextScene,
   onSetActiveView,
-  onToggleListenMode,
-  onToggleLayoutMode,
   onStopListening,
   onNavigateScene,
 }: ToolbarProps): JSX.Element {
-  const infoText = layoutMode && activeView === 'monitor'
-    ? 'Reorder mode: drag strips to arrange, then lock layout.'
-    : '';
   const showStatusText = statusText !== 'Online' && statusText !== 'Streaming';
-  const showContextRow = showStatusText || Boolean(infoText) || activeView === 'show';
 
   return (
-    <section className="controls toolbar">
+    <section className={`controls toolbar ${activeView === 'show' ? 'is-show-view' : ''}`}>
       <div className="toolbar-main">
         <div className="toolbar-main-left">
           <nav className="control-group segmented-control" aria-label="Primary views">
@@ -90,82 +78,56 @@ export function Toolbar({
           </nav>
         </div>
 
+        <div className="toolbar-main-center">
+          {activeView === 'show' ? (
+            <div className="toolbar-scene-control" aria-label="Scene controls">
+              <button
+                type="button"
+                className="toolbar-scene-step"
+                aria-label="Previous scene"
+                disabled={!canGoToPreviousScene}
+                onClick={() => onNavigateScene(-1)}
+              >
+                ‹
+              </button>
+              <div className="toolbar-scene-copy" aria-label={`Current scene ${activeSceneName}`}>
+                <strong id="scene-status-text">{activeSceneName}</strong>
+              </div>
+              <span className="toolbar-scene-divider" aria-hidden="true"></span>
+              <div className="toolbar-scene-copy toolbar-scene-copy--checklist" aria-label={`${showCheckedCount} of ${showTotalCount} channels checked`}>
+                <strong id="show-progress-text">{showCheckedCount}/{showTotalCount}</strong>
+              </div>
+              <button
+                type="button"
+                className="toolbar-scene-next"
+                aria-label="Advance to next scene"
+                disabled={!canGoToNextScene}
+                onClick={() => onNavigateScene(1)}
+              >
+                {nextSceneName ? `Next: ${nextSceneName}` : 'End of show'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+
         <div id="toolbar-actions" className={`control-group button-row toolbar-main-right ${activeView === 'setup' ? 'is-setup-context' : ''}`}>
           <button
-            id="listen-mode-toggle"
-            type="button"
-            className={`${multiListen ? 'is-active' : ''} ${activeView === 'setup' ? 'is-hidden' : ''}`}
-            onClick={onToggleListenMode}
-          >
-            <span className="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="M12 4a8 8 0 0 0-8 8v3a3 3 0 0 0 3 3h1v-7H7a5 5 0 0 1 10 0h-1v7h1a3 3 0 0 0 3-3v-3a8 8 0 0 0-8-8Z"></path></svg>
-            </span>
-            <span className="button-label">{multiListen ? 'Multi listen' : 'Single listen'}</span>
-          </button>
-
-          <button
-            id="layout-mode-toggle"
-            className={`secondary ${layoutMode ? 'is-active' : ''} ${activeView === 'monitor' ? '' : 'is-hidden'}`}
-            type="button"
-            disabled={activeView === 'show'}
-            onClick={onToggleLayoutMode}
-          >
-            <span className="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="m4 20 4-1 10-10-3-3L5 16l-1 4Z"></path><path d="m14 6 3 3"></path></svg>
-            </span>
-            <span className="button-label">{layoutMode ? 'Finish reorder' : 'Reorder channels'}</span>
-          </button>
-
-          <button
             id="stop-listening"
-            className={`secondary is-armed toolbar-stop-button ${activeView === 'setup' ? 'is-setup-context' : ''} ${selectedCount > 0 ? '' : 'is-hidden'}`}
+            className={`toolbar-stop-button ${activeView === 'setup' ? 'is-setup-context' : ''} ${selectedCount > 0 ? '' : 'is-hidden'}`}
             type="button"
             onClick={onStopListening}
           >
             <span className="button-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M6 6h12v12H6z"></path></svg>
             </span>
-            <span className="button-label">{activeView === 'setup' ? 'Stop audio' : 'Stop listening'}</span>
+            <span className="button-label">{activeView === 'setup' ? 'Stop audio' : 'Stop all'}</span>
           </button>
         </div>
       </div>
 
-      {showContextRow ? (
+      {showStatusText ? (
         <div className="toolbar-status-strip" aria-label="Current context">
-          {showStatusText ? <span id="status-text" className="toolbar-notice" role="status">{statusText}</span> : null}
-          {infoText ? (
-            <span className="toolbar-info-pill" role="status">
-              <span className="toolbar-info-dot" aria-hidden="true"></span>
-              <span>{infoText}</span>
-            </span>
-          ) : null}
-          <div className={`toolbar-scene-control ${activeView === 'show' ? '' : 'is-hidden'}`} aria-label="Scene controls">
-          <button
-            type="button"
-            className="toolbar-scene-step"
-            aria-label="Previous scene"
-            disabled={!canGoToPreviousScene}
-            onClick={() => onNavigateScene(-1)}
-          >
-            ‹
-          </button>
-          <div className="toolbar-scene-copy" aria-label={`Current scene ${activeSceneName}`}>
-            <strong id="scene-status-text">{activeSceneName}</strong>
-          </div>
-          <span className="toolbar-scene-divider" aria-hidden="true"></span>
-          <div className="toolbar-scene-copy toolbar-scene-copy--checklist" aria-label={`${showCheckedCount} of ${showTotalCount} channels checked`}>
-            <strong id="show-progress-text">{showCheckedCount}/{showTotalCount}</strong>
-          </div>
-          <button
-            type="button"
-            className="toolbar-scene-next"
-            aria-label="Advance to next scene"
-            disabled={!canGoToNextScene}
-            onClick={() => onNavigateScene(1)}
-          >
-            {nextSceneName ? `Next: ${nextSceneName}` : 'End of show'}
-          </button>
-        </div>
+          <span id="status-text" className="toolbar-notice" role="status">{statusText}</span>
         </div>
       ) : null}
     </section>

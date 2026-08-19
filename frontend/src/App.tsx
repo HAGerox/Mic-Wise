@@ -27,6 +27,7 @@ import { useWaveform } from './hooks/useWaveform';
 import { clampGainDb, sortChannels, sortScenes } from './lib/format';
 import {
   getSceneChecklistStats,
+  getChannelSelectionAfterInteraction,
   normaliseNumberOrder,
   normaliseActiveView,
   resolveActiveSceneId,
@@ -43,7 +44,7 @@ import type {
   SettingsUpdateRequest,
   ShowfilePayload,
 } from './types/api';
-import type { ActiveView, AudioInputSource } from './types/ui';
+import type { ActiveView, AudioInputSource, ChannelSelectionModifiers } from './types/ui';
 
 const SYNC_STATUS_REFRESH_MS = 1500;
 const ALERT_REFRESH_MS = 900;
@@ -81,29 +82,6 @@ function getFocusedShowChannelId(
     .filter((channelId) => selectedChannelIds.has(channelId));
 
   return orderedSelection[0] ?? null;
-}
-
-function getNextSelectionAfterInteraction(
-  selectedChannelIds: Set<number>,
-  channelId: number,
-  multiListen: boolean,
-): number[] {
-  const nextSelection = new Set<number>(selectedChannelIds);
-
-  if (multiListen) {
-    if (nextSelection.has(channelId)) {
-      nextSelection.delete(channelId);
-    } else {
-      nextSelection.add(channelId);
-    }
-  } else if (nextSelection.size === 1 && nextSelection.has(channelId)) {
-    nextSelection.clear();
-  } else {
-    nextSelection.clear();
-    nextSelection.add(channelId);
-  }
-
-  return [...nextSelection];
 }
 
 function buildActiveAlertsByChannelId(alerts: AudioAlertResponse[]): Map<number, AudioAlertResponse> {
@@ -279,7 +257,6 @@ function AppContent(): JSX.Element {
       type: 'hydrateFromSettings',
       payload: {
         activeView: normaliseActiveView(settings.active_mode),
-        multiListen: settings.multi_listen_enabled,
         activeSceneId: resolveActiveSceneId(settings.active_scene_id, scenes),
       },
     });
@@ -469,7 +446,6 @@ function AppContent(): JSX.Element {
       type: 'hydrateFromSettings',
       payload: {
         activeView: normaliseActiveView(updatedSettings.active_mode),
-        multiListen: updatedSettings.multi_listen_enabled,
         activeSceneId: resolveActiveSceneId(updatedSettings.active_scene_id, currentScenes),
       },
     });
@@ -492,34 +468,10 @@ function AppContent(): JSX.Element {
     });
   }, [dispatch, patchSettings]);
 
-  const handleToggleListenMode = useCallback(async (): Promise<void> => {
-    const nextMultiListen = !state.multiListen;
-    const nextSelection = nextMultiListen ? orderedSelection() : orderedSelection().slice(0, 1);
-    dispatch({ type: 'setMultiListen', payload: nextMultiListen });
-
-    if (!nextMultiListen && state.selectedChannelIds.size > 1) {
-      dispatch({ type: 'replaceSelection', payload: nextSelection });
-      await syncListening(nextSelection, 0);
-    }
-
-    await patchSettings({ multi_listen_enabled: nextMultiListen });
-  }, [dispatch, orderedSelection, patchSettings, state.multiListen, state.selectedChannelIds.size, syncListening]);
-
   const handleStopListening = useCallback(async (): Promise<void> => {
     dispatch({ type: 'clearSelection' });
     await syncListening([], 0);
   }, [dispatch, syncListening]);
-
-  const handleToggleLayoutMode = useCallback((): void => {
-    if (state.activeView !== 'monitor') {
-      return;
-    }
-
-    dispatch({ type: 'setLayoutMode', payload: !state.layoutMode });
-    if (!state.layoutMode) {
-      dispatch({ type: 'closeModal' });
-    }
-  }, [dispatch, state.activeView, state.layoutMode]);
 
   const handlePersistOrder = useCallback(async (orderedIds: number[]): Promise<void> => {
     const fallbackOrderedIds = sortChannels(channels).map((channel) => channel.id);
@@ -564,11 +516,25 @@ function AppContent(): JSX.Element {
     }
   }, [channels, queryClient, setStatusText]);
 
-  const handleChannelInteraction = useCallback(async (channelId: number): Promise<void> => {
-    const nextSelection = getNextSelectionAfterInteraction(state.selectedChannelIds, channelId, state.multiListen);
-    dispatch({ type: 'interactChannelCard', payload: { channelId } });
-    await syncListening(nextSelection, 0);
-  }, [dispatch, state.multiListen, state.selectedChannelIds, syncListening]);
+  const handleChannelInteraction = useCallback(async (
+    channelId: number,
+    modifiers: ChannelSelectionModifiers,
+  ): Promise<void> => {
+    const orderedChannelIds = sortChannels(channels).map((channel) => channel.id);
+    const nextSelection = getChannelSelectionAfterInteraction({
+      orderedChannelIds,
+      selectedChannelIds: state.selectedChannelIds,
+      anchorChannelId: state.selectionAnchorChannelId,
+      channelId,
+      additive: modifiers.additive,
+      range: modifiers.range,
+    });
+    dispatch({
+      type: 'interactChannelCard',
+      payload: { channelId, orderedChannelIds, modifiers },
+    });
+    await syncListening(nextSelection.selectedChannelIds, 0);
+  }, [channels, dispatch, state.selectedChannelIds, state.selectionAnchorChannelId, syncListening]);
 
   const handleScrubWaveform = useCallback(async (replaySeconds: number): Promise<void> => {
     if (state.modalChannelId === null) {
@@ -762,8 +728,6 @@ function AppContent(): JSX.Element {
     <main className="app-shell">
       <Toolbar
         activeView={state.activeView}
-        layoutMode={state.layoutMode}
-        multiListen={state.multiListen}
         selectedCount={state.selectedChannelIds.size}
         statusText={state.statusText}
         activeSceneName={activeSceneName}
@@ -775,10 +739,6 @@ function AppContent(): JSX.Element {
         onSetActiveView={(view) => {
           void handleSetActiveView(view);
         }}
-        onToggleListenMode={() => {
-          void handleToggleListenMode();
-        }}
-        onToggleLayoutMode={handleToggleLayoutMode}
         onStopListening={() => {
           void handleStopListening();
         }}
@@ -803,12 +763,11 @@ function AppContent(): JSX.Element {
               activeAlertsByChannelId={activeAlertsByChannelId}
               selectedChannelIds={state.selectedChannelIds}
               activeView={state.activeView}
-              layoutMode={state.layoutMode}
               activeScene={activeScene}
               checklist={sceneChecklist}
               masterGainDb={settings?.master_gain_db ?? 0}
-              onInteractChannel={(channelId) => {
-                void handleChannelInteraction(channelId);
+              onInteractChannel={(channelId, modifiers) => {
+                void handleChannelInteraction(channelId, modifiers);
               }}
               onToggleChecklist={(channelId) => {
                 handleToggleChecklist(channelId);

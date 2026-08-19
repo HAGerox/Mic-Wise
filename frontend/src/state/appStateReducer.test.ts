@@ -7,10 +7,14 @@ describe('appStateReducer', () => {
     expect(initialAppState.setupTab).toBe('general');
   });
 
-  it('toggles single-listen selection and opens the modal', () => {
+  it('toggles a channel directly and opens the modal', () => {
     const firstPass = appStateReducer(initialAppState, {
       type: 'interactChannelCard',
-      payload: { channelId: 12 },
+      payload: {
+        channelId: 12,
+        orderedChannelIds: [12],
+        modifiers: { additive: false, range: false },
+      },
     });
 
     expect([...firstPass.selectedChannelIds]).toEqual([12]);
@@ -19,35 +23,42 @@ describe('appStateReducer', () => {
 
     const secondPass = appStateReducer(firstPass, {
       type: 'interactChannelCard',
-      payload: { channelId: 12 },
+      payload: {
+        channelId: 12,
+        orderedChannelIds: [12],
+        modifiers: { additive: false, range: false },
+      },
     });
 
     expect([...secondPass.selectedChannelIds]).toEqual([]);
     expect(secondPass.modalChannelId).toBe(12);
   });
 
-  it('preserves multiple selections in multi-listen mode', () => {
-    const multiListenState = appStateReducer(initialAppState, {
-      type: 'setMultiListen',
-      payload: true,
-    });
-    const firstSelection = appStateReducer(multiListenState, {
+  it('adds channels with the additive modifier', () => {
+    const firstSelection = appStateReducer(initialAppState, {
       type: 'interactChannelCard',
-      payload: { channelId: 1 },
+      payload: {
+        channelId: 1,
+        orderedChannelIds: [1, 2],
+        modifiers: { additive: false, range: false },
+      },
     });
     const secondSelection = appStateReducer(firstSelection, {
       type: 'interactChannelCard',
-      payload: { channelId: 2 },
+      payload: {
+        channelId: 2,
+        orderedChannelIds: [1, 2],
+        modifiers: { additive: true, range: false },
+      },
     });
 
     expect([...secondSelection.selectedChannelIds]).toEqual([1, 2]);
   });
 
-  it('drops layout mode and closes the modal when switching to setup view', () => {
+  it('closes the modal when switching to setup view', () => {
     const populatedState = {
       ...initialAppState,
       activeView: 'monitor' as const,
-      layoutMode: true,
       modalChannelId: 9,
       modalScrubSeconds: 42,
     };
@@ -57,7 +68,6 @@ describe('appStateReducer', () => {
       payload: 'setup',
     });
 
-    expect(nextState.layoutMode).toBe(false);
     expect(nextState.modalChannelId).toBeNull();
     expect(nextState.modalScrubSeconds).toBe(0);
   });

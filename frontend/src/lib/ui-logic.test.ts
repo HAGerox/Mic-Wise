@@ -8,6 +8,7 @@ import {
   calculateWaveformPointShift,
   computeWaveformDisplayPoints,
   getSceneChecklistStats,
+  getChannelSelectionAfterInteraction,
   getShowChannelVisualState,
   maxPoolValues,
   normaliseNumberOrder,
@@ -17,6 +18,48 @@ import {
 } from './ui-logic';
 
 describe('ui-logic helpers', () => {
+  it('uses single selection by default and toggles the sole active channel off', () => {
+    expect(getChannelSelectionAfterInteraction({
+      orderedChannelIds: [1, 2, 3, 4],
+      selectedChannelIds: new Set([1, 2]),
+      anchorChannelId: 2,
+      channelId: 3,
+      additive: false,
+      range: false,
+    })).toEqual({ selectedChannelIds: [3], anchorChannelId: 3 });
+
+    expect(getChannelSelectionAfterInteraction({
+      orderedChannelIds: [1, 2, 3, 4],
+      selectedChannelIds: new Set([3]),
+      anchorChannelId: 3,
+      channelId: 3,
+      additive: false,
+      range: false,
+    })).toEqual({ selectedChannelIds: [], anchorChannelId: 3 });
+  });
+
+  it('command-click toggles individual channels without clearing the selection', () => {
+    expect(getChannelSelectionAfterInteraction({
+      orderedChannelIds: [1, 2, 3, 4],
+      selectedChannelIds: new Set([1, 3]),
+      anchorChannelId: 3,
+      channelId: 4,
+      additive: true,
+      range: false,
+    })).toEqual({ selectedChannelIds: [1, 3, 4], anchorChannelId: 4 });
+  });
+
+  it('shift-click adds the ordered range from the selection anchor', () => {
+    expect(getChannelSelectionAfterInteraction({
+      orderedChannelIds: [1, 2, 3, 4, 5],
+      selectedChannelIds: new Set([1, 3]),
+      anchorChannelId: 3,
+      channelId: 5,
+      additive: false,
+      range: true,
+    })).toEqual({ selectedChannelIds: [1, 3, 4, 5], anchorChannelId: 3 });
+  });
+
   it('max-pools signal history so short transients remain visible', () => {
     expect(maxPoolValues([0.1, 0.9, 0.2, 0.4], 2)).toEqual([0.9, 0.4]);
     expect(maxPoolValues([-1, Number.NaN, 2], 3)).toEqual([0, 0, 1]);

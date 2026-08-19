@@ -1,14 +1,12 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo } from 'react';
 
 import { formatDbfs, getChannelInitials, getInputLabel } from '../lib/format';
 import { buildEnergyLinePath } from '../lib/ui-logic';
-import type { ChannelCardState } from '../types/ui';
-
-const LONG_PRESS_MS = 420;
+import type { ChannelCardState, ChannelSelectionModifiers } from '../types/ui';
 
 interface ChannelCardProps {
   state: ChannelCardState;
-  onInteract: (channelId: number) => void;
+  onInteract: (channelId: number, modifiers: ChannelSelectionModifiers) => void;
   onToggleChecklist: (channelId: number) => void;
 }
 
@@ -22,27 +20,10 @@ function ChannelCardComponent({
     metrics,
     activeAlert,
     isSelected,
-    isLayoutMode,
-    isShowMode,
+    canReorder,
     visualState,
     statusTone,
   } = state;
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressTriggeredRef = useRef(false);
-
-  useEffect(() => () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-    }
-  }, []);
-
-  const clearLongPress = (): void => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
   const statusLabel = activeAlert
     ? activeAlert.severity === 'critical'
       ? 'Critical'
@@ -58,51 +39,37 @@ function ChannelCardComponent({
     ? { backgroundImage: `url(${JSON.stringify(channel.photo_path)})` }
     : undefined;
 
-  const handleInteraction = (): void => {
-    if (isLayoutMode || longPressTriggeredRef.current) {
-      longPressTriggeredRef.current = false;
-      return;
-    }
-    onInteract(channel.id);
-  };
-
   return (
     <article
       className={[
         'channel-card',
         isSelected ? 'is-selected' : '',
         activeAlert ? `has-alert is-alert-${activeAlert.severity}` : '',
-        isLayoutMode ? 'is-layout-mode' : '',
         visualState === 'off' ? 'is-show-off' : '',
         visualState === 'pending' ? 'is-show-pending' : '',
         visualState === 'checked' ? 'is-show-checked' : '',
         `is-status-${statusTone}`,
       ].filter(Boolean).join(' ')}
       data-channel-id={String(channel.id)}
-      onPointerDown={() => {
-        if (!isShowMode) {
-          return;
-        }
-        clearLongPress();
-        longPressTriggeredRef.current = false;
-        longPressTimerRef.current = window.setTimeout(() => {
-          longPressTriggeredRef.current = true;
-          onToggleChecklist(channel.id);
-        }, LONG_PRESS_MS);
-      }}
-      onPointerUp={clearLongPress}
-      onPointerLeave={clearLongPress}
-      onPointerCancel={clearLongPress}
     >
       <button
         type="button"
         className="channel-card-listen-target"
-        disabled={isLayoutMode}
         aria-pressed={isSelected}
         aria-label={`${channelIdentity} ${channel.name}, ${statusLabel}, peak ${formatDbfs(metrics.peakDbfs)} dBFS`}
-        onClick={handleInteraction}
+        onClick={(event) => {
+          onInteract(channel.id, {
+            additive: event.metaKey || event.ctrlKey,
+            range: event.shiftKey,
+          });
+        }}
       />
       <div className="channel-card-visual">
+        {canReorder ? (
+          <span className="channel-reorder-handle" title={`Drag to reorder ${channel.name}`} aria-hidden="true">
+            <svg viewBox="0 0 16 16" focusable="false"><path d="M3 4h10M3 8h10M3 12h10"></path></svg>
+          </span>
+        ) : null}
         <div className={`channel-photo-layer ${channel.photo_path ? 'has-photo' : ''}`} style={photoStyle}>
           {!channel.photo_path ? <span>{getChannelInitials(channel)}</span> : null}
         </div>
@@ -135,7 +102,6 @@ function ChannelCardComponent({
                   aria-label={`${visualState === 'checked' ? 'Mark unchecked' : 'Mark checked'}: ${channel.name}`}
                   onPointerDown={(event) => {
                     event.stopPropagation();
-                    clearLongPress();
                   }}
                   onClick={(event) => {
                     event.stopPropagation();
