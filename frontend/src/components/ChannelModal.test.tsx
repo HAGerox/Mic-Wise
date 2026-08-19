@@ -17,18 +17,18 @@ const channel: ChannelResponse = {
   position_y: 0,
 };
 
-function renderModal() {
+function renderModal(overrides: Partial<Parameters<typeof ChannelModal>[0]> = {}) {
+  const onScrub = vi.fn();
   return render(
     <ChannelModal
       channel={channel}
       visible={true}
-      combinedGainDb={0}
-      transportStatusText="ready"
       modalScrubSeconds={0}
       waveform={null}
       displayPoints={[]}
       onClose={vi.fn()}
-      onScrub={vi.fn()}
+      onScrub={onScrub}
+      {...overrides}
     />,
   );
 }
@@ -58,15 +58,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('ChannelModal waveform ruler', () => {
+describe('ChannelModal inspector', () => {
   it('shows a channel identity image when one is configured', () => {
     const photoChannel = { ...channel, photo_path: 'https://example.com/vocal-1.jpg' };
     const { container } = render(
       <ChannelModal
         channel={photoChannel}
         visible={true}
-        combinedGainDb={0}
-        transportStatusText="Live"
         modalScrubSeconds={0}
         waveform={null}
         displayPoints={[]}
@@ -81,30 +79,33 @@ describe('ChannelModal waveform ruler', () => {
     });
   });
 
-  it('shows the channel number inline before a custom channel name', () => {
+  it('puts the input directly under the channel name without redundant status copy', () => {
     renderModal();
 
-    const heading = screen.getByRole('heading', { name: 'CH 01 Vocal 1' });
-    const channelNumber = screen.getByText('CH 01');
-
-    expect(heading).toContainElement(channelNumber);
-    expect(channelNumber).toHaveClass('modal-kicker');
+    expect(screen.getByRole('heading', { name: 'Vocal 1' })).toBeInTheDocument();
+    expect(screen.getByText('Input 1')).toHaveClass('modal-meta');
+    expect(screen.queryByText('CH 01')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Rolling capture/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/total trim/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Transport/)).not.toBeInTheDocument();
   });
 
-  it('uses minute-based history copy and pins edge labels inside the scale', () => {
-    const { container } = renderModal();
+  it('shows only a replay offset timer when listening behind live', () => {
+    renderModal({ modalScrubSeconds: 83 });
 
-    expect(screen.getByText('5 min rolling peak history')).toBeInTheDocument();
-    expect(screen.queryByText('300 s rolling peak history')).not.toBeInTheDocument();
+    const timer = screen.getByText('−1:23');
+    expect(timer).toHaveTextContent('−1:23');
+    expect(timer.tagName).toBe('OUTPUT');
+    expect(screen.queryByText('5 min rolling peak history')).not.toBeInTheDocument();
+    expect(screen.getByText('5:00')).toBeInTheDocument();
+    expect(screen.getByText('Live')).toBeInTheDocument();
+  });
 
-    const startMark = screen.getByText('5:00').closest('.waveform-scale-mark');
-    const liveMark = screen.getAllByText('Live')[1].closest('.waveform-scale-mark');
+  it('keeps the history ruler but does not show a transport timer at the live edge', () => {
+    renderModal();
 
-    expect(startMark).toHaveClass('is-edge-start');
-    expect(startMark).toHaveClass('is-major');
-    expect(liveMark).toHaveClass('is-edge-end');
-    expect(liveMark).toHaveClass('is-live');
-    expect(container.querySelectorAll('.waveform-scale-mark.is-edge-start')).toHaveLength(1);
-    expect(container.querySelectorAll('.waveform-scale-mark.is-edge-end')).toHaveLength(1);
+    expect(screen.getByText('5:00')).toBeInTheDocument();
+    expect(screen.getByText('Live')).toBeInTheDocument();
+    expect(screen.queryByText(/−\d/)).not.toBeInTheDocument();
   });
 });

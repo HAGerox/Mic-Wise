@@ -124,14 +124,6 @@ function ChannelCardComponent({
         </div>
         <div className="channel-photo-shade"></div>
 
-        <header className="channel-card-header">
-          <span className="channel-number">{channelIdentity}</span>
-          <span className={`channel-status-badge is-${statusTone}`}>
-            <span className="channel-status-dot" aria-hidden="true"></span>
-            {statusLabel}
-          </span>
-        </header>
-
         <div className="channel-signal-shell" aria-hidden="true">
           <svg className="channel-signal-trace" viewBox="0 0 100 24" preserveAspectRatio="none">
             <path d={energyPath} vectorEffect="non-scaling-stroke" />
@@ -143,16 +135,13 @@ function ChannelCardComponent({
             <h2 className="channel-name">{channel.name}</h2>
             <span className="channel-secondary">{getInputLabel(channel)}</span>
           </div>
-          <div className="channel-meta-row">
-            {activeAlert ? (
+          {activeAlert ? (
+            <div className="channel-meta-row">
               <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
-            ) : (
-              <span className="channel-peak-readout" aria-label="Peak level">
-                {formatDbfs(metrics.peakDbfs)} dBFS
-              </span>
-            )}
-            {getBadgeMarkup(visualState)}
-          </div>
+            </div>
+          ) : visualState ? (
+            <div className="channel-meta-row">{getBadgeMarkup(visualState)}</div>
+          ) : null}
         </footer>
       </div>
     </article>

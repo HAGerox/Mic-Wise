@@ -12,7 +12,6 @@ import {
   getSettings,
   listAudioInputDevices,
   listNetworkInterfaces,
-  testAlerts,
   testRChat,
   updateSettings,
 } from './api/settings';
@@ -48,6 +47,9 @@ import type { ActiveView, AudioInputSource } from './types/ui';
 
 const SYNC_STATUS_REFRESH_MS = 1500;
 const ALERT_REFRESH_MS = 900;
+const EMPTY_CHANNELS: ChannelResponse[] = [];
+const EMPTY_SCENES: SceneResponse[] = [];
+const EMPTY_ALERTS: AudioAlertResponse[] = [];
 const ALERT_SEVERITY_PRIORITY: Record<AudioAlertResponse['severity'], number> = {
   warning: 1,
   critical: 2,
@@ -63,25 +65,6 @@ function getSceneAssignmentState(scene: SceneResponse | null, channelId: number)
 
 function getCombinedGainDb(channel: ChannelResponse | null, settings: SettingsResponse | null): number {
   return clampGainDb((channel?.gain_db ?? 0) + (settings?.master_gain_db ?? 0));
-}
-
-function getTransportStatusText(
-  modalChannelId: number | null,
-  selectedChannelIds: Set<number>,
-  modalScrubSeconds: number,
-): string {
-  if (!modalChannelId || !selectedChannelIds.has(modalChannelId)) {
-    return 'Idle';
-  }
-
-  if (modalScrubSeconds > 0) {
-    const totalSeconds = Math.max(0, Math.round(modalScrubSeconds));
-    const minutes = Math.floor(totalSeconds / 60);
-    const remainingSeconds = totalSeconds % 60;
-    return `Replay ${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
-  }
-
-  return 'Live';
 }
 
 function getFocusedShowChannelId(
@@ -212,13 +195,13 @@ function AppContent(): JSX.Element {
     refetchOnWindowFocus: false,
   });
 
-  const channels = channelsQuery.data ?? [];
-  const scenes = scenesQuery.data ?? [];
+  const channels = channelsQuery.data ?? EMPTY_CHANNELS;
+  const scenes = scenesQuery.data ?? EMPTY_SCENES;
   const settings = settingsQuery.data ?? null;
   const syncStatus = syncStatusQuery.data ?? null;
   const audioDevices = audioDevicesQuery.data ?? [];
   const networkInterfaces = networkInterfacesQuery.data ?? [];
-  const activeAlerts = settings?.alerts_enabled === false ? [] : (activeAlertsQuery.data ?? []);
+  const activeAlerts = settings?.alerts_enabled === false ? EMPTY_ALERTS : (activeAlertsQuery.data ?? EMPTY_ALERTS);
 
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
   const orderedScenes = useMemo(() => sortScenes(scenes), [scenes]);
@@ -761,24 +744,6 @@ function AppContent(): JSX.Element {
     }
   }, [dispatch, queryClient, setStatusText, syncListening]);
 
-  const handleTestAlerts = useCallback(async (): Promise<void> => {
-    try {
-      const alert = await testAlerts();
-      seenAlertIdsRef.current.add(alert.id);
-      setToastAlerts((currentAlerts) => [alert, ...currentAlerts.filter((currentAlert) => currentAlert.id !== alert.id)].slice(0, 4));
-      const popupDurationMs = Math.max(1, Number(settings?.alert_popup_duration_sec || 6)) * 1000;
-      const timeoutId = window.setTimeout(() => {
-        dismissToastAlert(alert.id);
-      }, popupDurationMs);
-      toastTimeoutsRef.current.set(alert.id, timeoutId);
-      await queryClient.invalidateQueries({ queryKey: ['activeAlerts'] });
-      setStatusText('Test alert sent');
-    } catch (error) {
-      console.error('Unable to test alerts', error);
-      setStatusText('Test alert failed');
-    }
-  }, [dismissToastAlert, queryClient, setStatusText, settings?.alert_popup_duration_sec]);
-
   const handleTestRChat = useCallback(async (): Promise<void> => {
     try {
       const result = await testRChat();
@@ -792,12 +757,6 @@ function AppContent(): JSX.Element {
       setStatusText('RChat test failed');
     }
   }, [setStatusText]);
-
-  const transportStatusText = getTransportStatusText(
-    state.modalChannelId,
-    state.selectedChannelIds,
-    state.modalScrubSeconds,
-  );
 
   return (
     <main className="app-shell">
@@ -864,8 +823,6 @@ function AppContent(): JSX.Element {
           <ChannelModal
             channel={modalChannel}
             visible={isMonitorLikeView && state.modalChannelId !== null}
-            combinedGainDb={getCombinedGainDb(modalChannel, settings)}
-            transportStatusText={transportStatusText}
             modalScrubSeconds={state.modalScrubSeconds}
             waveform={waveform}
             displayPoints={displayPoints}
@@ -901,7 +858,6 @@ function AppContent(): JSX.Element {
         onResetChecklist={handleResetAllChecklists}
         onExportShowfile={handleExportShowfile}
         onImportShowfile={handleImportShowfile}
-        onTestAlerts={handleTestAlerts}
         onTestRChat={handleTestRChat}
       />
 

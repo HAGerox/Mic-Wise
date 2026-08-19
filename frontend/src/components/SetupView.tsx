@@ -238,7 +238,6 @@ interface SetupViewProps {
   onResetChecklist: () => void;
   onExportShowfile: () => Promise<void>;
   onImportShowfile: (file: File) => Promise<void>;
-  onTestAlerts: () => Promise<void>;
   onTestRChat: () => Promise<void>;
 }
 
@@ -266,7 +265,6 @@ export function SetupView({
   onResetChecklist,
   onExportShowfile,
   onImportShowfile,
-  onTestAlerts,
   onTestRChat,
 }: SetupViewProps): JSX.Element {
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
@@ -279,15 +277,6 @@ export function SetupView({
     () => getSelectedDeviceDetails(audioDevices, settings?.audio_input_device),
     [audioDevices, settings?.audio_input_device],
   );
-  const patchedChannelCount = useMemo(
-    () => orderedChannels.filter((channel) => channel.input_index !== null && channel.input_index !== undefined).length,
-    [orderedChannels],
-  );
-  const recordArmedCount = useMemo(
-    () => orderedChannels.filter((channel) => channel.is_record_enabled).length,
-    [orderedChannels],
-  );
-
   const [masterGainValue, setMasterGainValue] = useState('0');
   const [runtimeForm, setRuntimeForm] = useState({
     audio_source_mode: 'synthetic' as SettingsResponse['audio_source_mode'],
@@ -305,8 +294,6 @@ export function SetupView({
     external_sync_midi_input_name: '',
   });
   const [alertsForm, setAlertsForm] = useState({
-    alerts_enabled: true,
-    alert_popup_duration_sec: 6,
     rchat_enabled: false,
     rchat_flash_enabled: false,
     rchat_hold_seconds: 8,
@@ -342,8 +329,6 @@ export function SetupView({
       external_sync_midi_input_name: settings?.external_sync_midi_input_name ?? '',
     });
     setAlertsForm({
-      alerts_enabled: Boolean(settings?.alerts_enabled ?? true),
-      alert_popup_duration_sec: Math.max(1, Number(settings?.alert_popup_duration_sec ?? 6)),
       rchat_enabled: Boolean(settings?.rchat_enabled),
       rchat_flash_enabled: Boolean(settings?.rchat_flash_enabled),
       rchat_hold_seconds: Math.max(1, Number(settings?.rchat_hold_seconds ?? 8)),
@@ -366,11 +351,11 @@ export function SetupView({
     setSceneAssignments(nextAssignments);
   }, [activeScene]);
 
-  const setupSections: Array<{ id: SetupTab; label: string; icon: string }> = [
-    { id: 'general', label: 'General', icon: 'GEN' },
-    { id: 'channels', label: 'Channels', icon: 'CH' },
-    { id: 'scenes', label: 'Scenes', icon: 'SCN' },
-    { id: 'automation', label: 'Automation', icon: 'AUTO' },
+  const setupSections: Array<{ id: SetupTab; label: string }> = [
+    { id: 'general', label: 'General' },
+    { id: 'channels', label: 'Channels' },
+    { id: 'scenes', label: 'Scenes' },
+    { id: 'automation', label: 'Automation' },
   ];
 
   const sceneAssignmentCounts = SCENE_ASSIGNMENT_STATES.reduce<Record<SceneAssignmentState, number>>(
@@ -404,53 +389,18 @@ export function SetupView({
   return (
     <section id="setup-view" className={`view-panel ${hidden ? 'is-hidden' : ''}`}>
       <section className="setup-shell">
-        <aside className="setup-sidebar panel-card" aria-label="Setup sections">
-          <div className="setup-sidebar-header">
-            <div>
-              <span className="setup-eyebrow">Setup</span>
-              <h2>Show engineering</h2>
-            </div>
-          </div>
-
-          <nav className="setup-nav" aria-label="Setup navigation">
-            {setupSections.map((section) => (
-              <button
-                key={section.id}
-                type="button"
-                className={`setup-nav-item ${setupTab === section.id ? 'is-active' : ''}`}
-                onClick={() => onSetSetupTab(section.id)}
-              >
-                <span className="setup-nav-icon" aria-hidden="true">{section.icon}</span>
-                <strong>{section.label}</strong>
-              </button>
-            ))}
-          </nav>
-
-          <div className="setup-sidebar-summary">
-            <div className="setup-summary-list" aria-label="Showfile snapshot">
-              <div className="setup-summary-row">
-                <span>Channels</span>
-                <strong>{orderedChannels.length}</strong>
-              </div>
-              <div className="setup-summary-row">
-                <span>Patched inputs</span>
-                <strong>{patchedChannelCount}</strong>
-              </div>
-              <div className="setup-summary-row">
-                <span>Record armed</span>
-                <strong>{recordArmedCount}</strong>
-              </div>
-              <div className="setup-summary-row">
-                <span>Scenes</span>
-                <strong>{orderedScenes.length}</strong>
-              </div>
-              <div className="setup-summary-row">
-                <span>Sync</span>
-                <strong>{buildExternalSyncStatusText(syncStatus)}</strong>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <nav className="setup-nav panel-card" aria-label="Setup navigation">
+          {setupSections.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              className={`setup-nav-item ${setupTab === section.id ? 'is-active' : ''}`}
+              onClick={() => onSetSetupTab(section.id)}
+            >
+              <strong>{section.label}</strong>
+            </button>
+          ))}
+        </nav>
 
         <div className="setup-content">
           <section className={`setup-section ${setupTab === 'general' ? '' : 'is-hidden'}`}>
@@ -483,16 +433,6 @@ export function SetupView({
             </div>
           </label>
 
-          <div className="setup-stat-grid">
-            <div className="setup-stat-card">
-              <span>Patched inputs</span>
-              <strong>{patchedChannelCount}</strong>
-            </div>
-            <div className="setup-stat-card">
-              <span>Record armed</span>
-              <strong>{recordArmedCount}</strong>
-            </div>
-          </div>
               </section>
 
               <section className="panel-card setup-summary-card setup-showfile-card">
@@ -701,11 +641,6 @@ export function SetupView({
 
         <div className="scenes-layout">
           <aside className="scene-list-panel">
-            <div className="panel-heading panel-heading--compact">
-              <div>
-                <h3>Cue list</h3>
-              </div>
-            </div>
             <div id="scene-list" className="scene-list">
               {orderedScenes.map((scene) => (
                 <button
@@ -759,8 +694,6 @@ export function SetupView({
                   </button>
                 </div>
               </div>
-
-              <p id="scene-detail-summary" className="scene-detail-summary">{getSceneSummary(activeScene)}</p>
 
               <section className="scene-sync-card">
                 <div>
@@ -836,7 +769,6 @@ export function SetupView({
               <section className="scene-status-programmer" aria-labelledby="scene-status-programmer-title">
                 <div className="scene-status-programmer-header">
                   <div>
-                    <span className="setup-eyebrow">Scene status</span>
                     <h3 id="scene-status-programmer-title">Paint channel states</h3>
                     <p>Choose a status, then click channel numbers to program this scene in one pass.</p>
                   </div>
@@ -1021,50 +953,14 @@ export function SetupView({
 
               <section className="scene-sync-settings-panel panel-card">
           <div>
-            <h3>Alerts and RChat</h3>
+            <h3>RChat</h3>
           </div>
 
           <div className="panel-heading-actions">
-            <button type="button" className="secondary" onClick={() => void onTestAlerts()}>Test alert</button>
             <button type="button" className="secondary" onClick={() => void onTestRChat()}>Test RChat</button>
           </div>
 
           <div className="scene-sync-settings-grid">
-            <label className="field-group field-group--toggle" htmlFor="alerts-enabled">
-              <span>Detector enabled</span>
-              <input
-                id="alerts-enabled"
-                type="checkbox"
-                checked={alertsForm.alerts_enabled}
-                onChange={(event) => {
-                  const nextForm = { ...alertsForm, alerts_enabled: event.target.checked };
-                  setAlertsForm(nextForm);
-                  void onSaveSettings({ alerts_enabled: nextForm.alerts_enabled });
-                }}
-              />
-            </label>
-
-            <label className="field-group" htmlFor="alert-popup-duration">
-              <span>Popup hold</span>
-              <input
-                id="alert-popup-duration"
-                type="number"
-                min={1}
-                max={30}
-                step={1}
-                value={alertsForm.alert_popup_duration_sec}
-                onChange={(event) => {
-                  setAlertsForm({
-                    ...alertsForm,
-                    alert_popup_duration_sec: Math.max(1, Number(event.target.value || 1)),
-                  });
-                }}
-                onBlur={() => {
-                  void onSaveSettings({ alert_popup_duration_sec: alertsForm.alert_popup_duration_sec });
-                }}
-              />
-            </label>
-
             <label className="field-group field-group--toggle" htmlFor="rchat-enabled">
               <span>Send to RChat</span>
               <input

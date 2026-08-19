@@ -79,6 +79,9 @@ describe('ChannelGrid layout ordering', () => {
     expect(card).toBeInTheDocument();
     expect(container.querySelector('.channel-signal-trace path')).not.toHaveAttribute('fill');
     expect(container.querySelector('.meter--vertical')).not.toBeInTheDocument();
+    expect(screen.queryByText('CH 01')).not.toBeInTheDocument();
+    expect(screen.queryByText('Live')).not.toBeInTheDocument();
+    expect(screen.queryByText(/dBFS/)).not.toBeInTheDocument();
     expect(photoLayer).toHaveClass('has-photo');
     expect(photoLayer).toHaveStyle({ backgroundImage: 'url("https://example.com/performer.jpg")' });
   });

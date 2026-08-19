@@ -39,21 +39,18 @@ function drawGrid(context: CanvasRenderingContext2D, width: number, height: numb
 
   const rulerMarks = buildWaveformRulerMarks(MODAL_WAVEFORM_WINDOW_SECONDS, 60, 15, 30);
   for (const mark of rulerMarks) {
+    if (mark.kind !== 'major') {
+      continue;
+    }
     const x = width * mark.position;
     context.beginPath();
-    context.setLineDash(mark.kind === 'major' || mark.kind === 'live' ? [1, 0] : [3, 4]);
-    context.strokeStyle = mark.kind === 'live' ? 'rgba(113, 112, 255, 0.44)' : 'rgba(255, 255, 255, 0.08)';
+    context.setLineDash([]);
+    context.strokeStyle = 'rgba(255, 255, 255, 0.07)';
     context.moveTo(x, 0);
     context.lineTo(x, height);
     context.stroke();
   }
   context.setLineDash([]);
-
-  context.beginPath();
-  context.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-  context.moveTo(0, height - 1.5);
-  context.lineTo(width, height - 1.5);
-  context.stroke();
 }
 
 interface WaveformCanvasProps {
@@ -104,36 +101,39 @@ export function WaveformCanvas({
     const availableSeconds = Math.min(waveform.seconds, MODAL_WAVEFORM_WINDOW_SECONDS);
     const occupiedWidth = width * (availableSeconds / MODAL_WAVEFORM_WINDOW_SECONDS);
     const startX = width - occupiedWidth;
-    const baseline = height - 14;
+    const baseline = height - 8;
 
     if (values.length > 0 && occupiedWidth > 0) {
       const chartTop = 8;
       const chartHeight = baseline - chartTop;
-      const barCount = Math.max(1, Math.floor(occupiedWidth / 2));
-      const peaks = maxPoolValues(values, barCount);
-      const barSpan = occupiedWidth / peaks.length;
-      const barWidth = Math.max(1, barSpan * 0.72);
+      const pointCount = Math.max(2, Math.floor(occupiedWidth / 2));
+      const peaks = maxPoolValues(values, pointCount);
+      const pointSpan = peaks.length > 1 ? occupiedWidth / (peaks.length - 1) : 0;
 
-      context.fillStyle = 'rgba(166, 230, 53, 0.92)';
+      context.beginPath();
       for (let index = 0; index < peaks.length; index += 1) {
         const value = peaks[index];
-        const x = startX + (index * barSpan);
-        const barHeight = Math.max(1, value * chartHeight);
-        context.fillRect(x, baseline - barHeight, barWidth, barHeight);
+        const x = peaks.length > 1 ? startX + (index * pointSpan) : width;
+        const y = baseline - (value * chartHeight);
+        if (index === 0) {
+          context.moveTo(x, y);
+        } else {
+          context.lineTo(x, y);
+        }
       }
+      context.strokeStyle = 'rgba(166, 230, 53, 0.96)';
+      context.lineWidth = 1.5;
+      context.stroke();
     }
 
     if (scrubSeconds > 0) {
       const markerX = width * (1 - Math.min(scrubSeconds, MODAL_WAVEFORM_WINDOW_SECONDS) / MODAL_WAVEFORM_WINDOW_SECONDS);
       context.strokeStyle = '#f97316';
-      context.lineWidth = 2;
+      context.lineWidth = 1;
       context.beginPath();
       context.moveTo(markerX, 0);
       context.lineTo(markerX, height);
       context.stroke();
-
-      context.fillStyle = '#f97316';
-      context.fillRect(markerX - 3, 8, 6, 6);
     }
   }, [displayPoints, resizeTick, scrubSeconds, waveform]);
 

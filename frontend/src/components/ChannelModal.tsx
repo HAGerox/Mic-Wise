@@ -1,4 +1,4 @@
-import { formatGainDb, formatPlaybackOffset, getChannelInitials, getInputLabel, isDefaultChannelName } from '../lib/format';
+import { formatPlaybackOffset, getChannelInitials, getInputLabel } from '../lib/format';
 import { MODAL_WAVEFORM_WINDOW_SECONDS } from '../hooks/useWaveform';
 import { buildWaveformRulerMarks } from '../lib/ui-logic';
 import { WaveformCanvas } from './WaveformCanvas';
@@ -7,8 +7,6 @@ import type { ChannelResponse, ChannelWaveformResponse } from '../types/api';
 interface ChannelModalProps {
   channel: ChannelResponse | null;
   visible: boolean;
-  combinedGainDb: number;
-  transportStatusText: string;
   modalScrubSeconds: number;
   waveform: ChannelWaveformResponse | null;
   displayPoints: number[];
@@ -19,8 +17,6 @@ interface ChannelModalProps {
 export function ChannelModal({
   channel,
   visible,
-  combinedGainDb,
-  transportStatusText,
   modalScrubSeconds,
   waveform,
   displayPoints,
@@ -29,40 +25,28 @@ export function ChannelModal({
 }: ChannelModalProps): JSX.Element {
   if (!visible || !channel) {
     return (
-      <>
-        <div id="channel-modal-empty" className="monitor-dock-empty">
-          <strong>Channel inspector</strong>
-          <span>Select a channel to listen, inspect recent history, or scrub back from live.</span>
-        </div>
-        <section id="channel-modal" className="monitor-dock-panel is-hidden" role="dialog" aria-modal="false" aria-hidden="true"></section>
-      </>
+      <section id="channel-modal" className="monitor-dock-panel is-hidden" role="dialog" aria-modal="false" aria-hidden="true"></section>
     );
   }
 
-  const repeatedName = isDefaultChannelName(channel);
-  const modalScrubLabel = modalScrubSeconds > 0 ? `Replay ${formatPlaybackOffset(modalScrubSeconds)}` : 'Live';
-  const historyMinutes = Math.round(MODAL_WAVEFORM_WINDOW_SECONDS / 60);
-  const historyLabel = `${historyMinutes} min rolling peak history`;
-  const rulerMarks = buildWaveformRulerMarks(MODAL_WAVEFORM_WINDOW_SECONDS, 60, 15, 30);
-  const channelIdentity = `CH ${channel.number.toString().padStart(2, '0')}`;
   const photoStyle = channel.photo_path
     ? { backgroundImage: `url(${JSON.stringify(channel.photo_path)})` }
     : undefined;
+  const rulerMarks = buildWaveformRulerMarks(MODAL_WAVEFORM_WINDOW_SECONDS, 60, 15, 30);
+  const replayPositionPercent = Math.min(
+    96,
+    Math.max(4, 100 * (1 - (modalScrubSeconds / MODAL_WAVEFORM_WINDOW_SECONDS))),
+  );
 
   return (
-    <>
-      <div id="channel-modal-empty" className="monitor-dock-empty is-hidden">
-        <strong>Channel inspector</strong>
-        <span>Select a channel to listen, inspect recent history, or scrub back from live.</span>
-      </div>
-      <section
-        id="channel-modal"
-        className="monitor-dock-panel"
-        role="dialog"
-        aria-modal="false"
-        aria-labelledby="modal-channel-name"
-        aria-hidden="false"
-      >
+    <section
+      id="channel-modal"
+      className="monitor-dock-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="modal-channel-name"
+      aria-hidden="false"
+    >
         <button id="close-modal" className="icon-button inspector-close-button" type="button" aria-label="Close channel details" onClick={onClose}>×</button>
         <header className="modal-header">
           <div className="modal-identity">
@@ -70,44 +54,20 @@ export function ChannelModal({
               {!channel.photo_path ? getChannelInitials(channel) : null}
             </div>
             <div className="modal-header-copy">
-              <h2 id="modal-channel-name">
-                {repeatedName ? (
-                  channelIdentity
-                ) : (
-                  <>
-                    <span id="modal-channel-number" className="modal-kicker">{channelIdentity}</span>
-                    {channel.name}
-                  </>
-                )}
-              </h2>
-              <p id="modal-channel-meta" className="modal-meta">
-                {channel.is_record_enabled ? 'Rolling capture armed' : 'Rolling capture off'}
-              </p>
+              <h2 id="modal-channel-name">{channel.name}</h2>
+              <p id="modal-channel-meta" className="modal-meta">{getInputLabel(channel)}</p>
             </div>
-          </div>
-          <div className="modal-badges">
-            <span id="modal-patch-badge" className="info-badge">{getInputLabel(channel)}</span>
-            <span id="modal-record-badge" className="info-badge">{formatGainDb(combinedGainDb)} total trim</span>
-            <span id="modal-transport-status" className="info-badge">Transport {transportStatusText}</span>
           </div>
         </header>
 
         <div className="inspector-layout">
           <div className="waveform-shell">
-            <div className="waveform-header-row">
-              <div>
-                <strong id="modal-scrub-label">{modalScrubLabel}</strong>
-              </div>
-              <span className="waveform-meta-note">{historyLabel}</span>
-            </div>
-
             <WaveformCanvas
               waveform={waveform}
               displayPoints={displayPoints}
               scrubSeconds={modalScrubSeconds}
               onScrub={onScrub}
             />
-
             <div className="waveform-scale" aria-hidden="true">
               {rulerMarks.map((mark, index) => {
                 const edgeClassName = index === 0
@@ -132,9 +92,19 @@ export function ChannelModal({
                 );
               })}
             </div>
+            {modalScrubSeconds > 0 ? (
+              <output
+                id="modal-replay-offset"
+                className="waveform-replay-timer"
+                aria-label={`${formatPlaybackOffset(modalScrubSeconds)} behind live`}
+                aria-live="polite"
+                style={{ left: `${replayPositionPercent}%` }}
+              >
+                −{formatPlaybackOffset(modalScrubSeconds)}
+              </output>
+            ) : null}
           </div>
         </div>
-      </section>
-    </>
+    </section>
   );
 }
