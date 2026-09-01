@@ -588,6 +588,16 @@ function AppContent(): JSX.Element {
         return;
       }
 
+      if (
+        event.key === 'Escape'
+        && (state.activeView === 'monitor' || state.activeView === 'show')
+        && state.selectedChannelIds.size > 0
+      ) {
+        event.preventDefault();
+        void handleStopListening();
+        return;
+      }
+
       const arrowDirections = {
         ArrowLeft: 'left',
         ArrowRight: 'right',
@@ -614,9 +624,12 @@ function AppContent(): JSX.Element {
           .filter((position) => Number.isInteger(position.channelId));
         const targetChannelId = getChannelGridNavigationTarget(positions, currentChannelId, direction);
         if (targetChannelId !== null && targetChannelId !== currentChannelId) {
-          monitorViewRef.current
-            ?.querySelector<HTMLElement>(`.channel-card[data-channel-id="${targetChannelId}"]`)
-            ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          const targetCard = monitorViewRef.current
+            ?.querySelector<HTMLElement>(`.channel-card[data-channel-id="${targetChannelId}"]`) ?? null;
+          targetCard?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          targetCard
+            ?.querySelector<HTMLButtonElement>('.channel-card-listen-target')
+            ?.focus({ preventScroll: true });
           void handleChannelInteraction(targetChannelId, { additive: false, range: false });
         }
         return;
@@ -654,6 +667,7 @@ function AppContent(): JSX.Element {
     activeScene,
     channels,
     handleChannelInteraction,
+    handleStopListening,
     handleToggleChecklist,
     handleUndo,
     state.activeView,
