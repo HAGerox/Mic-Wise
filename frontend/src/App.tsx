@@ -133,7 +133,6 @@ function AppContent(): JSX.Element {
   const undoIdRef = useRef(0);
   const undoRunningRef = useRef(false);
   const [toastAlerts, setToastAlerts] = useState<AudioAlertResponse[]>([]);
-  const [undoLabel, setUndoLabel] = useState<string | null>(null);
 
   const healthQuery = useQuery({
     queryKey: ['health'],
@@ -233,12 +232,10 @@ function AppContent(): JSX.Element {
       ...undoStackRef.current,
       { id: undoIdRef.current, label, undo },
     ].slice(-UNDO_HISTORY_LIMIT);
-    setUndoLabel(label);
   }, []);
 
   const clearUndoHistory = useCallback((): void => {
     undoStackRef.current = [];
-    setUndoLabel(null);
   }, []);
 
   const handleUndo = useCallback(async (): Promise<void> => {
@@ -252,14 +249,12 @@ function AppContent(): JSX.Element {
 
     undoRunningRef.current = true;
     undoStackRef.current = undoStackRef.current.slice(0, -1);
-    setUndoLabel(undoStackRef.current.at(-1)?.label ?? null);
     try {
       await entry.undo();
       setStatusText(`Undid ${entry.label}`);
     } catch (error) {
       console.error(`Unable to undo ${entry.label}`, error);
       undoStackRef.current = [...undoStackRef.current, entry].slice(-UNDO_HISTORY_LIMIT);
-      setUndoLabel(entry.label);
       setStatusText(`Undo failed: ${entry.label}`);
     } finally {
       undoRunningRef.current = false;
@@ -886,7 +881,6 @@ function AppContent(): JSX.Element {
         showTotalCount={sceneChecklistStats.total}
         canGoToPreviousScene={activeSceneIndex > 0}
         canGoToNextScene={activeSceneIndex !== -1 && activeSceneIndex < orderedScenes.length - 1}
-        undoLabel={undoLabel}
         onSetActiveView={(view) => {
           void handleSetActiveView(view);
         }}
@@ -895,9 +889,6 @@ function AppContent(): JSX.Element {
         }}
         onNavigateScene={(offset) => {
           void handleNavigateScene(offset);
-        }}
-        onUndo={() => {
-          void handleUndo();
         }}
       />
 

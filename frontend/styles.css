@@ -177,15 +177,6 @@ button.is-active,
   background: var(--bg-surface-strong);
 }
 
-.toolbar-undo-button {
-  background: transparent;
-  color: var(--text-secondary);
-}
-
-.toolbar-undo-button:hover:not(:disabled) {
-  background: var(--bg-interactive-hover);
-}
-
 .button-danger {
   border-color: transparent;
   background: #b93434;
@@ -1228,6 +1219,7 @@ body.monitor-view-active .monitor-dock {
 }
 
 .inspector-layout {
+  position: relative;
   height: 100%;
   min-height: 0;
   display: grid;
@@ -1345,8 +1337,10 @@ body.monitor-view-active .monitor-dock {
 }
 
 .waveform-replay-timer {
-  flex: 0 0 auto;
-  align-self: center;
+  position: absolute;
+  z-index: 3;
+  top: -22px;
+  right: 10px;
   color: #fdba74;
   font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
   font-size: 13px;

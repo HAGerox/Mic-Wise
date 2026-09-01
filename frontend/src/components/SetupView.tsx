@@ -800,7 +800,6 @@ export function SetupView({
                       id="scene-sync-osc-argument"
                       type="text"
                       value={sceneCueForm.sync_osc_argument}
-                      placeholder="No argument required"
                       onChange={(event) => {
                         setSceneCueForm({ ...sceneCueForm, sync_osc_argument: event.target.value });
                       }}

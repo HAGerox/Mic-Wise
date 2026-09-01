@@ -54,6 +54,9 @@ export function ChannelModal({
               <p id="modal-channel-meta" className="modal-meta">{getInputLabel(channel)}</p>
             </div>
           </div>
+        </header>
+
+        <div className="inspector-layout">
           {modalScrubSeconds > 0 ? (
             <output
               id="modal-replay-offset"
@@ -64,9 +67,6 @@ export function ChannelModal({
               −{formatPlaybackOffset(modalScrubSeconds)}
             </output>
           ) : null}
-        </header>
-
-        <div className="inspector-layout">
           <div className="waveform-shell">
             <WaveformCanvas
               waveform={waveform}
