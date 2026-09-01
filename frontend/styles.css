@@ -177,6 +177,15 @@ button.is-active,
   background: var(--bg-surface-strong);
 }
 
+.toolbar-undo-button {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.toolbar-undo-button:hover:not(:disabled) {
+  background: var(--bg-interactive-hover);
+}
+
 .button-danger {
   border-color: transparent;
   background: #b93434;
@@ -760,16 +769,6 @@ body.monitor-view-active .monitor-dock {
   color: var(--text-muted);
 }
 
-.tag--scene-pending {
-  background: var(--warning-surface);
-  color: #fcd68a;
-}
-
-.tag--scene-checked {
-  background: var(--success-surface);
-  color: #b7e4c2;
-}
-
 .channel-meta-row {
   display: flex;
   justify-content: space-between;
@@ -952,28 +951,20 @@ body.monitor-view-active .monitor-dock {
   background: var(--accent-surface);
 }
 
-.channel-card.is-show-pending .channel-nameplate {
-  border-top-color: rgba(245, 158, 11, 0.52);
+.channel-card.is-scene-onstage.is-show-pending .channel-nameplate {
+  border-top-color: rgba(239, 68, 68, 0.82);
+}
+
+.channel-card.is-scene-ready.is-show-pending .channel-nameplate {
+  border-top-color: rgba(245, 158, 11, 0.82);
 }
 
 .channel-card.is-show-checked .channel-nameplate {
-  border-top-color: rgba(39, 166, 68, 0.56);
-}
-
-.channel-card.is-scene-ready {
-  border-color: rgba(245, 158, 11, 0.34);
-}
-
-.channel-card.is-scene-onstage {
-  border-color: rgba(39, 166, 68, 0.34);
+  border-top-color: rgba(39, 166, 68, 0.88);
 }
 
 .channel-scene-role {
-  position: absolute;
-  z-index: 6;
-  top: 8px;
-  left: 8px;
-  min-height: 22px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
   padding: 4px 6px;
@@ -984,15 +975,18 @@ body.monitor-view-active .monitor-dock {
   line-height: 1;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  pointer-events: none;
 }
 
 .channel-scene-role.is-ready {
-  background: rgba(145, 91, 7, 0.94);
+  background: rgba(180, 101, 6, 0.96);
 }
 
 .channel-scene-role.is-onstage {
-  background: rgba(20, 105, 45, 0.94);
+  background: rgba(185, 52, 52, 0.96);
+}
+
+.channel-scene-role.is-checked {
+  background: rgba(20, 130, 50, 0.96);
 }
 
 .channel-title-group {
@@ -1027,21 +1021,52 @@ body.monitor-view-active .monitor-dock {
 }
 
 .channel-check-action {
-  position: relative;
+  position: absolute;
   z-index: 6;
-  min-height: 24px;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  min-width: 26px;
+  min-height: 26px;
   cursor: pointer;
   pointer-events: auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: var(--radius-xs);
-  padding: 4px 7px;
+  background: rgba(7, 8, 9, 0.72);
   color: #ffffff;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .channel-check-action:hover:not(:disabled) {
-  filter: brightness(1.12);
-  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.58);
+  background: rgba(20, 22, 24, 0.92);
+}
+
+.channel-check-action.is-checked {
+  border-color: var(--success);
+  background: var(--success);
+}
+
+.channel-check-action.is-checked:hover:not(:disabled) {
+  border-color: #35bb55;
+  background: #35bb55;
+}
+
+.channel-check-box,
+.channel-check-box svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.channel-check-box svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .channel-reorder-handle {
@@ -1320,15 +1345,12 @@ body.monitor-view-active .monitor-dock {
 }
 
 .waveform-replay-timer {
-  position: absolute;
-  top: 14px;
-  transform: translateX(-50%);
+  flex: 0 0 auto;
+  align-self: center;
   color: #fdba74;
   font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
-  text-shadow: 0 1px 2px #000, 0 0 6px rgba(0, 0, 0, 0.9);
-  pointer-events: none;
 }
 
 .waveform-footer {
@@ -1823,6 +1845,7 @@ body.monitor-view-active .monitor-dock {
   grid-template-columns: repeat(auto-fill, 48px);
   justify-content: start;
   gap: 6px;
+  touch-action: none;
 }
 
 .scene-status-tile {

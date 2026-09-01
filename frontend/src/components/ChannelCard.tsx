@@ -73,9 +73,6 @@ function ChannelCardComponent({
         }}
       />
       <div className="channel-card-visual">
-        {sceneRoleLabel ? (
-          <span className={`channel-scene-role is-${sceneAssignmentState}`}>{sceneRoleLabel}</span>
-        ) : null}
         {canReorder ? (
           <span className="channel-reorder-handle" title={`Drag to reorder ${channel.name}`} aria-hidden="true">
             <svg viewBox="0 0 16 16" focusable="false"><path d="M3 4h10M3 8h10M3 12h10"></path></svg>
@@ -85,6 +82,28 @@ function ChannelCardComponent({
           {!channel.photo_path ? <span>{getChannelInitials(channel)}</span> : null}
         </div>
         <div className="channel-photo-shade"></div>
+
+        {visualState === 'pending' || visualState === 'checked' ? (
+          <button
+            type="button"
+            className={`channel-check-action ${visualState === 'checked' ? 'is-checked' : 'is-unchecked'}`}
+            aria-pressed={visualState === 'checked'}
+            aria-label={`${visualState === 'checked' ? 'Mark unchecked' : 'Mark checked'}: ${channel.name}`}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleChecklist(channel.id);
+            }}
+          >
+            <span className="channel-check-box" aria-hidden="true">
+              {visualState === 'checked' ? (
+                <svg viewBox="0 0 16 16" focusable="false"><path d="m3 8.5 3 3 7-7"></path></svg>
+              ) : null}
+            </span>
+          </button>
+        ) : null}
 
         <div className="channel-signal-shell" aria-hidden="true">
           <svg className="channel-signal-trace" viewBox="0 0 100 24" preserveAspectRatio="none">
@@ -97,31 +116,19 @@ function ChannelCardComponent({
             <h2 className="channel-name">{channel.name}</h2>
             <span className="channel-secondary">{getInputLabel(channel)}</span>
           </div>
-          {activeAlert ? (
+          {activeAlert || visualState ? (
             <div className="channel-meta-row">
-              <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
-            </div>
-          ) : visualState ? (
-            <div className="channel-meta-row">
+              {activeAlert ? (
+                <span className={`channel-alert-badge is-${activeAlert.severity}`}>{activeAlert.kind}</span>
+              ) : null}
               {visualState === 'off' ? (
                 <span className="tag tag--scene-muted">Muted</span>
-              ) : (
-                <button
-                  type="button"
-                  className={`tag channel-check-action ${visualState === 'checked' ? 'tag--scene-checked' : 'tag--scene-pending'}`}
-                  aria-pressed={visualState === 'checked'}
-                  aria-label={`${visualState === 'checked' ? 'Mark unchecked' : 'Mark checked'}: ${channel.name}`}
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                  }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onToggleChecklist(channel.id);
-                  }}
-                >
-                  {visualState === 'checked' ? 'Checked' : 'Check'}
-                </button>
-              )}
+              ) : null}
+              {sceneRoleLabel && visualState !== 'off' ? (
+                <span className={`channel-scene-role is-${sceneAssignmentState} ${visualState === 'checked' ? 'is-checked' : ''}`}>
+                  {sceneRoleLabel}
+                </span>
+              ) : null}
             </div>
           ) : null}
         </footer>

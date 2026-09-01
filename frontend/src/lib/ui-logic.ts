@@ -15,65 +15,95 @@ export interface ChannelSelectionResult {
   anchorChannelId: number | null;
 }
 
-interface SceneAssignmentPaintRequest {
-  orderedChannelIds: number[];
-  assignments: Readonly<Record<number, SceneAssignmentState>>;
-  anchorChannelId: number | null;
-  channelId: number;
-  brush: SceneAssignmentState;
-  range: boolean;
+export function getScenePaintStrokeState(
+  currentState: SceneAssignmentState,
+  brush: SceneAssignmentState,
+): SceneAssignmentState {
+  return brush !== 'off' && currentState === brush ? 'off' : brush;
 }
 
-export interface SceneAssignmentPaintResult {
-  assignments: Record<number, SceneAssignmentState>;
-  anchorChannelId: number | null;
-  changed: boolean;
+export interface PointerStrokePoint {
+  x: number;
+  y: number;
 }
 
-export function getSceneAssignmentsAfterPaint({
-  orderedChannelIds,
-  assignments,
-  anchorChannelId,
-  channelId,
-  brush,
-  range,
-}: SceneAssignmentPaintRequest): SceneAssignmentPaintResult {
-  const validOrderedIds = orderedChannelIds.filter((id, index) => (
-    Number.isInteger(id) && orderedChannelIds.indexOf(id) === index
-  ));
-  if (!validOrderedIds.includes(channelId)) {
-    return { assignments: { ...assignments }, anchorChannelId, changed: false };
-  }
-
-  const resolvedAnchor = range && anchorChannelId !== null && validOrderedIds.includes(anchorChannelId)
-    ? anchorChannelId
-    : channelId;
-  const startIndex = validOrderedIds.indexOf(resolvedAnchor);
-  const endIndex = validOrderedIds.indexOf(channelId);
-  const paintedChannelIds = range
-    ? validOrderedIds.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1)
-    : [channelId];
-  const shouldClear = brush !== 'off' && paintedChannelIds.every((id) => (assignments[id] ?? 'off') === brush);
-  const nextState: SceneAssignmentState = shouldClear ? 'off' : brush;
-  const changed = paintedChannelIds.some((id) => (assignments[id] ?? 'off') !== nextState);
-
-  if (!changed) {
+export function getPointerStrokeSamplePoints(
+  start: PointerStrokePoint,
+  end: PointerStrokePoint,
+  maximumStep = 10,
+): PointerStrokePoint[] {
+  const safeStep = Math.max(1, Number.isFinite(maximumStep) ? maximumStep : 10);
+  const distance = Math.hypot(end.x - start.x, end.y - start.y);
+  const stepCount = Math.max(1, Math.ceil(distance / safeStep));
+  return Array.from({ length: stepCount }, (_, index) => {
+    const ratio = (index + 1) / stepCount;
     return {
-      assignments: { ...assignments },
-      anchorChannelId: range ? resolvedAnchor : channelId,
-      changed: false,
+      x: start.x + ((end.x - start.x) * ratio),
+      y: start.y + ((end.y - start.y) * ratio),
     };
+  });
+}
+
+export interface ChannelGridPosition {
+  channelId: number;
+  left: number;
+  top: number;
+}
+
+export type ChannelGridDirection = 'left' | 'right' | 'up' | 'down';
+
+export function getChannelGridNavigationTarget(
+  positions: ChannelGridPosition[],
+  currentChannelId: number,
+  direction: ChannelGridDirection,
+): number | null {
+  const orderedPositions = positions.filter((position, index) => (
+    Number.isInteger(position.channelId)
+    && positions.findIndex((candidate) => candidate.channelId === position.channelId) === index
+  ));
+  const currentPosition = orderedPositions.find((position) => position.channelId === currentChannelId);
+  if (!currentPosition) {
+    return null;
   }
 
-  const nextAssignments = { ...assignments };
-  paintedChannelIds.forEach((id) => {
-    nextAssignments[id] = nextState;
-  });
-  return {
-    assignments: nextAssignments,
-    anchorChannelId: range ? resolvedAnchor : channelId,
-    changed: true,
-  };
+  const rows: ChannelGridPosition[][] = [];
+  for (const position of orderedPositions) {
+    const row = rows.find((candidateRow) => Math.abs(candidateRow[0].top - position.top) <= 8);
+    if (row) {
+      row.push(position);
+    } else {
+      rows.push([position]);
+    }
+  }
+  rows.sort((left, right) => left[0].top - right[0].top);
+  rows.forEach((row) => row.sort((left, right) => left.left - right.left));
+
+  const rowIndex = rows.findIndex((row) => row.some((position) => position.channelId === currentChannelId));
+  const columnIndex = rows[rowIndex]?.findIndex((position) => position.channelId === currentChannelId) ?? -1;
+  if (rowIndex === -1 || columnIndex === -1) {
+    return null;
+  }
+
+  if (direction === 'left') {
+    return rows[rowIndex][columnIndex - 1]?.channelId
+      ?? rows[rowIndex - 1]?.at(-1)?.channelId
+      ?? currentChannelId;
+  }
+  if (direction === 'right') {
+    return rows[rowIndex][columnIndex + 1]?.channelId
+      ?? rows[rowIndex + 1]?.[0]?.channelId
+      ?? currentChannelId;
+  }
+
+  const targetRow = direction === 'up' ? rows[rowIndex - 1] : rows[rowIndex + 1];
+  if (!targetRow) {
+    return currentChannelId;
+  }
+  return targetRow.reduce((nearest, candidate) => (
+    Math.abs(candidate.left - currentPosition.left) < Math.abs(nearest.left - currentPosition.left)
+      ? candidate
+      : nearest
+  )).channelId;
 }
 
 export function getChannelSelectionAfterInteraction({

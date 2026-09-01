@@ -33,10 +33,6 @@ export function ChannelModal({
     ? { backgroundImage: `url(${JSON.stringify(channel.photo_path)})` }
     : undefined;
   const rulerMarks = buildWaveformRulerMarks(MODAL_WAVEFORM_WINDOW_SECONDS, 60, 15, 30);
-  const replayPositionPercent = Math.min(
-    96,
-    Math.max(4, 100 * (1 - (modalScrubSeconds / MODAL_WAVEFORM_WINDOW_SECONDS))),
-  );
 
   return (
     <section
@@ -58,6 +54,16 @@ export function ChannelModal({
               <p id="modal-channel-meta" className="modal-meta">{getInputLabel(channel)}</p>
             </div>
           </div>
+          {modalScrubSeconds > 0 ? (
+            <output
+              id="modal-replay-offset"
+              className="waveform-replay-timer"
+              aria-label={`${formatPlaybackOffset(modalScrubSeconds)} behind live`}
+              aria-live="polite"
+            >
+              −{formatPlaybackOffset(modalScrubSeconds)}
+            </output>
+          ) : null}
         </header>
 
         <div className="inspector-layout">
@@ -92,17 +98,6 @@ export function ChannelModal({
                 );
               })}
             </div>
-            {modalScrubSeconds > 0 ? (
-              <output
-                id="modal-replay-offset"
-                className="waveform-replay-timer"
-                aria-label={`${formatPlaybackOffset(modalScrubSeconds)} behind live`}
-                aria-live="polite"
-                style={{ left: `${replayPositionPercent}%` }}
-              >
-                −{formatPlaybackOffset(modalScrubSeconds)}
-              </output>
-            ) : null}
           </div>
         </div>
     </section>

@@ -9,9 +9,11 @@ interface ToolbarProps {
   showTotalCount: number;
   canGoToPreviousScene: boolean;
   canGoToNextScene: boolean;
+  undoLabel: string | null;
   onSetActiveView: (view: ActiveView) => void;
   onStopListening: () => void;
   onNavigateScene: (offset: number) => void;
+  onUndo: () => void;
 }
 
 export function Toolbar({
@@ -23,9 +25,11 @@ export function Toolbar({
   showTotalCount,
   canGoToPreviousScene,
   canGoToNextScene,
+  undoLabel,
   onSetActiveView,
   onStopListening,
   onNavigateScene,
+  onUndo,
 }: ToolbarProps): JSX.Element {
   return (
     <section className={`controls toolbar ${activeView === 'show' ? 'is-show-view' : ''}`}>
@@ -107,6 +111,14 @@ export function Toolbar({
         </div>
 
         <div id="toolbar-actions" className={`control-group button-row toolbar-main-right ${activeView === 'setup' ? 'is-setup-context' : ''}`}>
+          {undoLabel ? (
+            <button type="button" className="toolbar-undo-button" onClick={onUndo}>
+              <span className="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M9 7 4 12l5 5"></path><path d="M5 12h8a6 6 0 0 1 6 6"></path></svg>
+              </span>
+              <span className="button-label">Undo {undoLabel}</span>
+            </button>
+          ) : null}
           <button
             id="stop-listening"
             className={`toolbar-stop-button ${activeView === 'setup' ? 'is-setup-context' : ''} ${selectedCount > 0 ? '' : 'is-hidden'}`}

@@ -211,6 +211,7 @@ describe('ChannelGrid layout ordering', () => {
 
     expect(onToggleChecklist).toHaveBeenCalledWith(channel.id);
     expect(onInteractChannel).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Mark checked: Channel 1' })).toHaveClass('is-unchecked');
   });
 
   it('keeps On Stage and About to Enter visibly distinct before and after checks', () => {
@@ -237,5 +238,10 @@ describe('ChannelGrid layout ordering', () => {
     expect(screen.getByText('About to enter')).toBeInTheDocument();
     expect(container.querySelector('[data-channel-id="1"]')).toHaveClass('is-scene-onstage', 'is-show-checked');
     expect(container.querySelector('[data-channel-id="2"]')).toHaveClass('is-scene-ready', 'is-show-checked');
+    expect(screen.getAllByRole('button', { name: /Mark unchecked/ })).toHaveLength(2);
+    expect(container.querySelectorAll('.channel-check-action.is-checked')).toHaveLength(2);
+    expect(container.querySelectorAll('.channel-scene-role.is-checked')).toHaveLength(2);
+    expect(container.querySelector('.channel-nameplate .channel-scene-role')).toBeInTheDocument();
+    expect(container.querySelector('.channel-nameplate .channel-check-action')).not.toBeInTheDocument();
   });
 });

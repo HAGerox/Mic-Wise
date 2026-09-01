@@ -27,6 +27,7 @@ import { useWaveform } from './hooks/useWaveform';
 import { clampGainDb, sortChannels, sortScenes } from './lib/format';
 import {
   getSceneChecklistStats,
+  getChannelGridNavigationTarget,
   getChannelSelectionAfterInteraction,
   normaliseNumberOrder,
   normaliseActiveView,
@@ -48,6 +49,7 @@ import type { ActiveView, AudioInputSource, ChannelSelectionModifiers } from './
 
 const SYNC_STATUS_REFRESH_MS = 1500;
 const ALERT_REFRESH_MS = 900;
+const UNDO_HISTORY_LIMIT = 20;
 const EMPTY_CHANNELS: ChannelResponse[] = [];
 const EMPTY_SCENES: SceneResponse[] = [];
 const EMPTY_ALERTS: AudioAlertResponse[] = [];
@@ -55,6 +57,12 @@ const ALERT_SEVERITY_PRIORITY: Record<AudioAlertResponse['severity'], number> = 
   warning: 1,
   critical: 2,
 };
+
+interface UndoEntry {
+  id: number;
+  label: string;
+  undo: () => Promise<void>;
+}
 
 function getSceneAssignmentState(scene: SceneResponse | null, channelId: number): string {
   if (!scene) {
@@ -121,7 +129,11 @@ function AppContent(): JSX.Element {
   const monitorDockRef = useRef<HTMLElement | null>(null);
   const toastTimeoutsRef = useRef<Map<string, number>>(new Map());
   const seenAlertIdsRef = useRef<Set<string>>(new Set());
+  const undoStackRef = useRef<UndoEntry[]>([]);
+  const undoIdRef = useRef(0);
+  const undoRunningRef = useRef(false);
   const [toastAlerts, setToastAlerts] = useState<AudioAlertResponse[]>([]);
+  const [undoLabel, setUndoLabel] = useState<string | null>(null);
 
   const healthQuery = useQuery({
     queryKey: ['health'],
@@ -214,6 +226,45 @@ function AppContent(): JSX.Element {
   const setStatusText = useCallback((statusText: string) => {
     dispatch({ type: 'setStatusText', payload: statusText });
   }, [dispatch]);
+
+  const pushUndo = useCallback((label: string, undo: () => Promise<void>): void => {
+    undoIdRef.current += 1;
+    undoStackRef.current = [
+      ...undoStackRef.current,
+      { id: undoIdRef.current, label, undo },
+    ].slice(-UNDO_HISTORY_LIMIT);
+    setUndoLabel(label);
+  }, []);
+
+  const clearUndoHistory = useCallback((): void => {
+    undoStackRef.current = [];
+    setUndoLabel(null);
+  }, []);
+
+  const handleUndo = useCallback(async (): Promise<void> => {
+    if (undoRunningRef.current) {
+      return;
+    }
+    const entry = undoStackRef.current.at(-1);
+    if (!entry) {
+      return;
+    }
+
+    undoRunningRef.current = true;
+    undoStackRef.current = undoStackRef.current.slice(0, -1);
+    setUndoLabel(undoStackRef.current.at(-1)?.label ?? null);
+    try {
+      await entry.undo();
+      setStatusText(`Undid ${entry.label}`);
+    } catch (error) {
+      console.error(`Unable to undo ${entry.label}`, error);
+      undoStackRef.current = [...undoStackRef.current, entry].slice(-UNDO_HISTORY_LIMIT);
+      setUndoLabel(entry.label);
+      setStatusText(`Undo failed: ${entry.label}`);
+    } finally {
+      undoRunningRef.current = false;
+    }
+  }, [setStatusText]);
 
   const buildSelectionInputSources = useCallback((channelIds: number[]): AudioInputSource[] => {
     return channelIds
@@ -379,65 +430,6 @@ function AppContent(): JSX.Element {
     };
   }, [isMonitorLikeView, state.modalChannelId]);
 
-  useEffect(() => {
-    const handleGlobalKeydown = (event: KeyboardEvent): void => {
-      const target = event.target;
-      if (
-        target instanceof HTMLElement
-        && (
-          target.isContentEditable
-          || target.tagName === 'INPUT'
-          || target.tagName === 'TEXTAREA'
-          || target.tagName === 'SELECT'
-        )
-      ) {
-        return;
-      }
-
-      if (state.activeView !== 'show') {
-        return;
-      }
-
-      const focusedChannelId = getFocusedShowChannelId(state.modalChannelId, state.selectedChannelIds, channels);
-      if (focusedChannelId === null || !activeScene) {
-        return;
-      }
-
-      if (getSceneAssignmentState(activeScene, focusedChannelId) === 'off') {
-        return;
-      }
-
-      if (event.key.toLowerCase() === 'y') {
-        event.preventDefault();
-        dispatch({
-          type: 'toggleSceneChecklist',
-          payload: {
-            sceneId: activeScene.id,
-            channelId: focusedChannelId,
-            desiredState: true,
-          },
-        });
-      }
-
-      if (event.key.toLowerCase() === 'n') {
-        event.preventDefault();
-        dispatch({
-          type: 'toggleSceneChecklist',
-          payload: {
-            sceneId: activeScene.id,
-            channelId: focusedChannelId,
-            desiredState: false,
-          },
-        });
-      }
-    };
-
-    window.addEventListener('keydown', handleGlobalKeydown);
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeydown);
-    };
-  }, [activeScene, channels, dispatch, state.activeView, state.modalChannelId, state.selectedChannelIds]);
-
   const patchSettings = useCallback(async (changes: SettingsUpdateRequest): Promise<SettingsResponse> => {
     const updatedSettings = await updateSettings(changes);
     const currentScenes = queryClient.getQueryData<SceneResponse[]>(['scenes']) ?? scenes;
@@ -473,10 +465,11 @@ function AppContent(): JSX.Element {
     await syncListening([], 0);
   }, [dispatch, syncListening]);
 
-  const handlePersistOrder = useCallback(async (orderedIds: number[]): Promise<void> => {
-    const fallbackOrderedIds = sortChannels(channels).map((channel) => channel.id);
+  const persistChannelOrder = useCallback(async (orderedIds: number[]): Promise<boolean> => {
+    const currentChannels = queryClient.getQueryData<ChannelResponse[]>(['channels']) ?? channels;
+    const fallbackOrderedIds = sortChannels(currentChannels).map((channel) => channel.id);
     const safeOrderedIds = normaliseNumberOrder(orderedIds, fallbackOrderedIds);
-    const channelById = new Map(channels.map((channel) => [channel.id, channel]));
+    const channelById = new Map(currentChannels.map((channel) => [channel.id, channel]));
     const changedChannels = safeOrderedIds
       .map((channelId, sortIndex) => ({ channelId, sortIndex, channel: channelById.get(channelId) ?? null }))
       .filter(({ channel, sortIndex }) => channel && channel.sort_index !== sortIndex)
@@ -502,19 +495,34 @@ function AppContent(): JSX.Element {
     );
 
     if (changedChannels.length === 0) {
-      return;
+      return false;
     }
 
     try {
       await Promise.all(
         changedChannels.map((channel) => updateChannel(channel.id, { sort_index: channel.sort_index })),
       );
+      return true;
     } catch (error) {
       console.error('Unable to persist channel order', error);
       await queryClient.invalidateQueries({ queryKey: ['channels'] });
       setStatusText('Channel order failed');
+      return false;
     }
   }, [channels, queryClient, setStatusText]);
+
+  const handlePersistOrder = useCallback(async (orderedIds: number[]): Promise<void> => {
+    const previousOrder = sortChannels(
+      queryClient.getQueryData<ChannelResponse[]>(['channels']) ?? channels,
+    ).map((channel) => channel.id);
+    const changed = await persistChannelOrder(orderedIds);
+    if (!changed) {
+      return;
+    }
+    pushUndo('channel move', async () => {
+      await persistChannelOrder(previousOrder);
+    });
+  }, [channels, persistChannelOrder, pushUndo, queryClient]);
 
   const handleChannelInteraction = useCallback(async (
     channelId: number,
@@ -564,6 +572,100 @@ function AppContent(): JSX.Element {
     });
   }, [activeScene, dispatch]);
 
+  useEffect(() => {
+    const handleGlobalKeydown = (event: KeyboardEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement
+        && (
+          target.isContentEditable
+          || target.tagName === 'INPUT'
+          || target.tagName === 'TEXTAREA'
+          || target.tagName === 'SELECT'
+        )
+      ) {
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        void handleUndo();
+        return;
+      }
+
+      const arrowDirections = {
+        ArrowLeft: 'left',
+        ArrowRight: 'right',
+        ArrowUp: 'up',
+        ArrowDown: 'down',
+      } as const;
+      const direction = arrowDirections[event.key as keyof typeof arrowDirections];
+      if (
+        direction
+        && (state.activeView === 'monitor' || state.activeView === 'show')
+        && state.selectedChannelIds.size === 1
+      ) {
+        event.preventDefault();
+        const currentChannelId = [...state.selectedChannelIds][0];
+        const positions = [...(monitorViewRef.current?.querySelectorAll<HTMLElement>('.channel-card[data-channel-id]') ?? [])]
+          .map((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+              channelId: Number(element.dataset.channelId),
+              left: rect.left,
+              top: rect.top,
+            };
+          })
+          .filter((position) => Number.isInteger(position.channelId));
+        const targetChannelId = getChannelGridNavigationTarget(positions, currentChannelId, direction);
+        if (targetChannelId !== null && targetChannelId !== currentChannelId) {
+          monitorViewRef.current
+            ?.querySelector<HTMLElement>(`.channel-card[data-channel-id="${targetChannelId}"]`)
+            ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          void handleChannelInteraction(targetChannelId, { additive: false, range: false });
+        }
+        return;
+      }
+
+      if (state.activeView !== 'show') {
+        return;
+      }
+
+      const focusedChannelId = getFocusedShowChannelId(state.modalChannelId, state.selectedChannelIds, channels);
+      if (focusedChannelId === null || !activeScene) {
+        return;
+      }
+
+      if (getSceneAssignmentState(activeScene, focusedChannelId) === 'off') {
+        return;
+      }
+
+      if (event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        handleToggleChecklist(focusedChannelId, true);
+      }
+
+      if (event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        handleToggleChecklist(focusedChannelId, false);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeydown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeydown);
+    };
+  }, [
+    activeScene,
+    channels,
+    handleChannelInteraction,
+    handleToggleChecklist,
+    handleUndo,
+    state.activeView,
+    state.modalChannelId,
+    state.selectedChannelIds,
+  ]);
+
   const handleNavigateScene = useCallback(async (offset: number): Promise<void> => {
     const nextIndex = activeSceneIndex === -1
       ? 0
@@ -597,8 +699,9 @@ function AppContent(): JSX.Element {
 
   const handleRemoveChannel = useCallback(async (channelId: number): Promise<void> => {
     await deleteChannel(channelId);
+    clearUndoHistory();
     await queryClient.invalidateQueries({ queryKey: ['channels'] });
-  }, [queryClient]);
+  }, [clearUndoHistory, queryClient]);
 
   const handleSaveSettings = useCallback(async (changes: SettingsUpdateRequest): Promise<void> => {
     const updatedSettings = await patchSettings(changes);
@@ -634,12 +737,37 @@ function AppContent(): JSX.Element {
   }, [dispatch, patchSettings]);
 
   const handleDeleteScene = useCallback(async (sceneId: number): Promise<void> => {
+    const deletedScene = (queryClient.getQueryData<SceneResponse[]>(['scenes']) ?? scenes)
+      .find((scene) => scene.id === sceneId) ?? null;
+    const wasActive = state.activeSceneId === sceneId;
     await deleteScene(sceneId);
+    await queryClient.invalidateQueries({ queryKey: ['scenes'] });
     const nextScenes = await queryClient.fetchQuery({ queryKey: ['scenes'], queryFn: listScenes });
     const nextActiveSceneId = resolveActiveSceneId(state.activeSceneId, nextScenes);
     dispatch({ type: 'setActiveSceneId', payload: nextActiveSceneId });
     await patchSettings({ active_scene_id: nextActiveSceneId });
-  }, [dispatch, patchSettings, queryClient, state.activeSceneId]);
+    if (!deletedScene) {
+      return;
+    }
+
+    pushUndo('scene deletion', async () => {
+      let restoredScene = await createScene({
+        name: deletedScene.name,
+        sync_osc_address: deletedScene.sync_osc_address,
+        sync_osc_argument: deletedScene.sync_osc_argument,
+        sync_midi_pattern: deletedScene.sync_midi_pattern,
+        channel_assignments: deletedScene.channel_assignments.map((assignment) => ({ ...assignment })),
+      });
+      if (restoredScene.order_index !== deletedScene.order_index) {
+        restoredScene = await updateScene(restoredScene.id, { order_index: deletedScene.order_index });
+      }
+      await queryClient.invalidateQueries({ queryKey: ['scenes'] });
+      if (wasActive) {
+        dispatch({ type: 'setActiveSceneId', payload: restoredScene.id });
+        await patchSettings({ active_scene_id: restoredScene.id });
+      }
+    });
+  }, [dispatch, patchSettings, pushUndo, queryClient, scenes, state.activeSceneId]);
 
   const handleSaveSceneName = useCallback(async (sceneId: number, name: string): Promise<void> => {
     const updatedScene = await updateScene(sceneId, { name });
@@ -653,12 +781,34 @@ function AppContent(): JSX.Element {
     sceneId: number,
     assignments: SceneChannelAssignmentRequest[],
   ): Promise<void> => {
+    const previousScene = (
+      queryClient.getQueryData<SceneResponse[]>(['scenes']) ?? scenes
+    ).find((scene) => scene.id === sceneId) ?? null;
+    const previousAssignments = previousScene?.channel_assignments.map((assignment) => ({ ...assignment })) ?? [];
     const updatedScene = await updateScene(sceneId, { channel_assignments: assignments });
     queryClient.setQueryData<SceneResponse[]>(
       ['scenes'],
       (current = []) => current.map((scene) => (scene.id === sceneId ? updatedScene : scene)),
     );
-  }, [queryClient]);
+    pushUndo('scene painting', async () => {
+      const currentScenes = queryClient.getQueryData<SceneResponse[]>(['scenes']) ?? [];
+      const targetScene = currentScenes.find((scene) => scene.id === sceneId)
+        ?? currentScenes.find((scene) => (
+          previousScene
+          && scene.order_index === previousScene.order_index
+          && scene.name === previousScene.name
+        ))
+        ?? null;
+      if (!targetScene) {
+        throw new Error('Scene no longer exists');
+      }
+      const restoredScene = await updateScene(targetScene.id, { channel_assignments: previousAssignments });
+      queryClient.setQueryData<SceneResponse[]>(
+        ['scenes'],
+        (current = []) => current.map((scene) => (scene.id === targetScene.id ? restoredScene : scene)),
+      );
+    });
+  }, [pushUndo, queryClient, scenes]);
 
   const handleSaveSceneCueMapping = useCallback(async (
     sceneId: number,
@@ -693,6 +843,7 @@ function AppContent(): JSX.Element {
       await syncListening([], 0);
       await importShowfile(payload);
 
+      clearUndoHistory();
       dispatch({ type: 'resetAllSceneChecklists' });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['settings'] }),
@@ -708,7 +859,7 @@ function AppContent(): JSX.Element {
       console.error('Unable to import showfile', error);
       setStatusText('Showfile import failed');
     }
-  }, [dispatch, queryClient, setStatusText, syncListening]);
+  }, [clearUndoHistory, dispatch, queryClient, setStatusText, syncListening]);
 
   const handleTestRChat = useCallback(async (): Promise<void> => {
     try {
@@ -735,6 +886,7 @@ function AppContent(): JSX.Element {
         showTotalCount={sceneChecklistStats.total}
         canGoToPreviousScene={activeSceneIndex > 0}
         canGoToNextScene={activeSceneIndex !== -1 && activeSceneIndex < orderedScenes.length - 1}
+        undoLabel={undoLabel}
         onSetActiveView={(view) => {
           void handleSetActiveView(view);
         }}
@@ -743,6 +895,9 @@ function AppContent(): JSX.Element {
         }}
         onNavigateScene={(offset) => {
           void handleNavigateScene(offset);
+        }}
+        onUndo={() => {
+          void handleUndo();
         }}
       />
 

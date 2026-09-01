@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { buildExternalSyncStatusText, getSceneAssignmentsAfterPaint } from '../lib/ui-logic';
+import {
+  buildExternalSyncStatusText,
+  getPointerStrokeSamplePoints,
+  getScenePaintStrokeState,
+} from '../lib/ui-logic';
 import { clampGainDb, sortChannels, sortScenes } from '../lib/format';
 import type {
   AudioInputDeviceResponse,
@@ -18,6 +22,15 @@ import type {
 import type { ProgramChannelDraft, SetupTab } from '../types/ui';
 
 const PROGRAM_AUTOSAVE_DELAY_MS = 450;
+
+interface ScenePaintStroke {
+  pointerId: number;
+  sceneId: number;
+  state: SceneAssignmentState;
+  paintedChannelIds: Set<number>;
+  changed: boolean;
+  lastPoint: { x: number; y: number } | null;
+}
 
 const SCENE_ASSIGNMENT_STATES: Array<{ state: SceneAssignmentState; label: string; shortLabel: string }> = [
   { state: 'onstage', label: 'On stage', shortLabel: 'On' },
@@ -309,7 +322,7 @@ export function SetupView({
   const [sceneAssignments, setSceneAssignments] = useState<Record<number, SceneAssignmentState>>({});
   const [sceneStateBrush, setSceneStateBrush] = useState<SceneAssignmentState>('onstage');
   const sceneAssignmentsRef = useRef<Record<number, SceneAssignmentState>>({});
-  const scenePaintAnchorChannelIdRef = useRef<number | null>(null);
+  const scenePaintStrokeRef = useRef<ScenePaintStroke | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -349,9 +362,34 @@ export function SetupView({
       (activeScene?.channel_assignments ?? []).map((assignment) => [assignment.channel_id, assignment.state]),
     ) as Record<number, SceneAssignmentState>;
     sceneAssignmentsRef.current = nextAssignments;
-    scenePaintAnchorChannelIdRef.current = null;
+    scenePaintStrokeRef.current = null;
     setSceneAssignments(nextAssignments);
   }, [activeScene]);
+
+  useEffect(() => {
+    const finishPointerStroke = (event: PointerEvent): void => {
+      const stroke = scenePaintStrokeRef.current;
+      if (!stroke || stroke.pointerId !== event.pointerId) {
+        return;
+      }
+      scenePaintStrokeRef.current = null;
+      if (!stroke.changed) {
+        return;
+      }
+      const payload: SceneChannelAssignmentRequest[] = orderedChannels.map((channel) => ({
+        channel_id: channel.id,
+        state: sceneAssignmentsRef.current[channel.id] ?? 'off',
+      }));
+      void onSaveSceneAssignments(stroke.sceneId, payload);
+    };
+
+    window.addEventListener('pointerup', finishPointerStroke);
+    window.addEventListener('pointercancel', finishPointerStroke);
+    return () => {
+      window.removeEventListener('pointerup', finishPointerStroke);
+      window.removeEventListener('pointercancel', finishPointerStroke);
+    };
+  }, [onSaveSceneAssignments, orderedChannels]);
 
   const setupSections: Array<{ id: SetupTab; label: string }> = [
     { id: 'general', label: 'General' },
@@ -368,32 +406,42 @@ export function SetupView({
     { off: 0, ready: 0, onstage: 0 },
   );
 
-  const applySceneState = (channelId: number, range: boolean): void => {
+  const paintSceneChannel = (channelId: number): void => {
+    const stroke = scenePaintStrokeRef.current;
+    if (!stroke || stroke.paintedChannelIds.has(channelId)) {
+      return;
+    }
+    stroke.paintedChannelIds.add(channelId);
+    if ((sceneAssignmentsRef.current[channelId] ?? 'off') === stroke.state) {
+      return;
+    }
+
+    const nextAssignments = {
+      ...sceneAssignmentsRef.current,
+      [channelId]: stroke.state,
+    };
+    stroke.changed = true;
+    sceneAssignmentsRef.current = nextAssignments;
+    setSceneAssignments(nextAssignments);
+  };
+
+  const beginScenePaint = (
+    pointerId: number,
+    channelId: number,
+    point: { x: number; y: number } | null,
+  ): void => {
     if (!activeScene) {
       return;
     }
-
-    const result = getSceneAssignmentsAfterPaint({
-      orderedChannelIds: orderedChannels.map((channel) => channel.id),
-      assignments: sceneAssignmentsRef.current,
-      anchorChannelId: scenePaintAnchorChannelIdRef.current,
-      channelId,
-      brush: sceneStateBrush,
-      range,
-    });
-    scenePaintAnchorChannelIdRef.current = result.anchorChannelId;
-    if (!result.changed) {
-      return;
-    }
-
-    const nextAssignments = result.assignments;
-    sceneAssignmentsRef.current = nextAssignments;
-    setSceneAssignments(nextAssignments);
-    const payload: SceneChannelAssignmentRequest[] = orderedChannels.map((orderedChannel) => ({
-      channel_id: orderedChannel.id,
-      state: nextAssignments[orderedChannel.id] ?? 'off',
-    }));
-    void onSaveSceneAssignments(activeScene.id, payload);
+    scenePaintStrokeRef.current = {
+      pointerId,
+      sceneId: activeScene.id,
+      state: getScenePaintStrokeState(sceneAssignmentsRef.current[channelId] ?? 'off', sceneStateBrush),
+      paintedChannelIds: new Set<number>(),
+      changed: false,
+      lastPoint: point,
+    };
+    paintSceneChannel(channelId);
   };
 
   return (
@@ -795,7 +843,7 @@ export function SetupView({
                 <div className="scene-status-programmer-header">
                   <div>
                     <h3 id="scene-status-programmer-title">Paint channel states</h3>
-                    <p>Click to paint. Shift-click another channel to paint the inclusive range.</p>
+                    <p>Click and drag across channel numbers to paint a continuous state stroke.</p>
                   </div>
 
                   <div className="scene-status-brushes" role="radiogroup" aria-label="Scene status brush">
@@ -816,7 +864,30 @@ export function SetupView({
                   </div>
                 </div>
 
-                <div id="scene-table-body" className="scene-status-grid" aria-label="Channel scene status">
+                <div
+                  id="scene-table-body"
+                  className="scene-status-grid"
+                  aria-label="Channel scene status"
+                  onPointerMove={(event) => {
+                    const stroke = scenePaintStrokeRef.current;
+                    if (!stroke || stroke.pointerId !== event.pointerId) {
+                      return;
+                    }
+                    const currentPoint = { x: event.clientX, y: event.clientY };
+                    const samplePoints = getPointerStrokeSamplePoints(
+                      stroke.lastPoint ?? currentPoint,
+                      currentPoint,
+                    );
+                    stroke.lastPoint = currentPoint;
+                    for (const point of samplePoints) {
+                      const target = document.elementFromPoint(point.x, point.y)?.closest<HTMLButtonElement>('.scene-status-tile');
+                      const channelId = Number(target?.dataset.channelId);
+                      if (target && event.currentTarget.contains(target) && Number.isInteger(channelId)) {
+                        paintSceneChannel(channelId);
+                      }
+                    }
+                  }}
+                >
                   {orderedChannels.map((channel) => {
                     const sceneState = sceneAssignments[channel.id] ?? 'off';
                     return (
@@ -828,7 +899,33 @@ export function SetupView({
                         disabled={!activeScene}
                         aria-label={`Paint channel ${channel.number}, ${channel.name}, with ${getSceneStateOption(sceneStateBrush).label}`}
                         title={`Channel ${channel.number} · ${channel.name} · ${getSceneStateOption(sceneState).label}`}
-                        onClick={(event) => applySceneState(channel.id, event.shiftKey)}
+                        onPointerDown={(event) => {
+                          if (event.button !== 0) {
+                            return;
+                          }
+                          event.preventDefault();
+                          event.currentTarget.setPointerCapture?.(event.pointerId);
+                          beginScenePaint(
+                            event.pointerId,
+                            channel.id,
+                            { x: event.clientX, y: event.clientY },
+                          );
+                        }}
+                        onClick={(event) => {
+                          if (event.detail !== 0 || !activeScene) {
+                            return;
+                          }
+                          beginScenePaint(-1, channel.id, null);
+                          const stroke = scenePaintStrokeRef.current;
+                          scenePaintStrokeRef.current = null;
+                          if (stroke?.changed) {
+                            const payload: SceneChannelAssignmentRequest[] = orderedChannels.map((orderedChannel) => ({
+                              channel_id: orderedChannel.id,
+                              state: sceneAssignmentsRef.current[orderedChannel.id] ?? 'off',
+                            }));
+                            void onSaveSceneAssignments(stroke.sceneId, payload);
+                          }
+                        }}
                       >
                         <span className="scene-status-channel-number">{channel.number}</span>
                       </button>

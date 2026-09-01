@@ -96,6 +96,7 @@ describe('ChannelModal inspector', () => {
     const timer = screen.getByText('−1:23');
     expect(timer).toHaveTextContent('−1:23');
     expect(timer.tagName).toBe('OUTPUT');
+    expect(timer.parentElement).toHaveClass('modal-header');
     expect(screen.queryByText('5 min rolling peak history')).not.toBeInTheDocument();
     expect(screen.getByText('5:00')).toBeInTheDocument();
     expect(screen.getByText('Live')).toBeInTheDocument();

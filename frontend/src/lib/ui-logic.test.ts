@@ -8,7 +8,9 @@ import {
   calculateWaveformPointShift,
   computeWaveformDisplayPoints,
   getSceneChecklistStats,
-  getSceneAssignmentsAfterPaint,
+  getChannelGridNavigationTarget,
+  getPointerStrokeSamplePoints,
+  getScenePaintStrokeState,
   getChannelSelectionAfterInteraction,
   getShowChannelVisualState,
   maxPoolValues,
@@ -61,49 +63,37 @@ describe('ui-logic helpers', () => {
     })).toEqual({ selectedChannelIds: [1, 3, 4, 5], anchorChannelId: 3 });
   });
 
-  it('scene painting toggles an already-painted needs-check state off', () => {
-    expect(getSceneAssignmentsAfterPaint({
-      orderedChannelIds: [1, 2, 3],
-      assignments: { 1: 'ready', 2: 'off', 3: 'onstage' },
-      anchorChannelId: 2,
-      channelId: 1,
-      brush: 'ready',
-      range: false,
-    })).toEqual({
-      assignments: { 1: 'off', 2: 'off', 3: 'onstage' },
-      anchorChannelId: 1,
-      changed: true,
-    });
+  it('scene painting chooses an erase stroke when it starts on the selected needs-check state', () => {
+    expect(getScenePaintStrokeState('ready', 'ready')).toBe('off');
+    expect(getScenePaintStrokeState('onstage', 'onstage')).toBe('off');
+    expect(getScenePaintStrokeState('off', 'ready')).toBe('ready');
+    expect(getScenePaintStrokeState('ready', 'off')).toBe('off');
   });
 
-  it('scene painting applies an inclusive shift range and keeps the first-click anchor', () => {
-    expect(getSceneAssignmentsAfterPaint({
-      orderedChannelIds: [1, 2, 3, 4, 5],
-      assignments: { 1: 'off', 2: 'ready', 3: 'off', 4: 'onstage', 5: 'off' },
-      anchorChannelId: 2,
-      channelId: 4,
-      brush: 'ready',
-      range: true,
-    })).toEqual({
-      assignments: { 1: 'off', 2: 'ready', 3: 'ready', 4: 'ready', 5: 'off' },
-      anchorChannelId: 2,
-      changed: true,
-    });
+  it('interpolates fast pointer movement into closely spaced paint samples', () => {
+    expect(getPointerStrokeSamplePoints({ x: 0, y: 0 }, { x: 30, y: 0 }, 10)).toEqual([
+      { x: 10, y: 0 },
+      { x: 20, y: 0 },
+      { x: 30, y: 0 },
+    ]);
+    expect(getPointerStrokeSamplePoints({ x: 4, y: 8 }, { x: 4, y: 8 }, 10)).toEqual([
+      { x: 4, y: 8 },
+    ]);
   });
 
-  it('scene painting clears a range only when every channel already has the needs-check brush', () => {
-    expect(getSceneAssignmentsAfterPaint({
-      orderedChannelIds: [1, 2, 3, 4],
-      assignments: { 1: 'off', 2: 'onstage', 3: 'onstage', 4: 'onstage' },
-      anchorChannelId: 2,
-      channelId: 4,
-      brush: 'onstage',
-      range: true,
-    })).toEqual({
-      assignments: { 1: 'off', 2: 'off', 3: 'off', 4: 'off' },
-      anchorChannelId: 2,
-      changed: true,
-    });
+  it('navigates wrapped channel-grid rows with arrow-key semantics', () => {
+    const positions = [
+      { channelId: 1, left: 0, top: 0 },
+      { channelId: 2, left: 100, top: 0 },
+      { channelId: 3, left: 200, top: 0 },
+      { channelId: 4, left: 0, top: 100 },
+      { channelId: 5, left: 100, top: 100 },
+    ];
+
+    expect(getChannelGridNavigationTarget(positions, 2, 'left')).toBe(1);
+    expect(getChannelGridNavigationTarget(positions, 3, 'right')).toBe(4);
+    expect(getChannelGridNavigationTarget(positions, 2, 'down')).toBe(5);
+    expect(getChannelGridNavigationTarget(positions, 4, 'up')).toBe(1);
   });
 
   it('max-pools signal history so short transients remain visible', () => {
