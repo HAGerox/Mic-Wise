@@ -1,6 +1,7 @@
 import type {
   AudioAlertResponse,
   ChannelResponse,
+  SceneAssignmentState,
   SceneResponse,
   SceneSyncStatusResponse,
   SettingsResponse,
@@ -59,5 +60,6 @@ export interface ChannelCardState {
   isSelected: boolean;
   canReorder: boolean;
   visualState: ShowChannelVisualState | null;
+  sceneAssignmentState: SceneAssignmentState | null;
   statusTone: ChannelStatusTone;
 }

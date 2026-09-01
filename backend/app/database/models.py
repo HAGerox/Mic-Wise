@@ -37,6 +37,7 @@ class SettingsRecord(Base):
     external_sync_osc_host: Mapped[str] = mapped_column(String(128), nullable=False, default="0.0.0.0")
     external_sync_osc_port: Mapped[int] = mapped_column(Integer, nullable=False, default=53001)
     external_sync_midi_input_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    scene_osc_defaults_seeded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     alerts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     alert_popup_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=6)
     rchat_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

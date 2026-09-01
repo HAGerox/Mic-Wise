@@ -729,7 +729,6 @@ function AppContent(): JSX.Element {
       <Toolbar
         activeView={state.activeView}
         selectedCount={state.selectedChannelIds.size}
-        statusText={state.statusText}
         activeSceneName={activeSceneName}
         nextSceneName={nextScene?.name ?? null}
         showCheckedCount={sceneChecklistStats.checked}

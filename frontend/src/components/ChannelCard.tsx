@@ -22,8 +22,14 @@ function ChannelCardComponent({
     isSelected,
     canReorder,
     visualState,
+    sceneAssignmentState,
     statusTone,
   } = state;
+  const sceneRoleLabel = sceneAssignmentState === 'onstage'
+    ? 'On stage'
+    : sceneAssignmentState === 'ready'
+      ? 'About to enter'
+      : null;
   const statusLabel = activeAlert
     ? activeAlert.severity === 'critical'
       ? 'Critical'
@@ -48,6 +54,8 @@ function ChannelCardComponent({
         visualState === 'off' ? 'is-show-off' : '',
         visualState === 'pending' ? 'is-show-pending' : '',
         visualState === 'checked' ? 'is-show-checked' : '',
+        sceneAssignmentState === 'onstage' ? 'is-scene-onstage' : '',
+        sceneAssignmentState === 'ready' ? 'is-scene-ready' : '',
         `is-status-${statusTone}`,
       ].filter(Boolean).join(' ')}
       data-channel-id={String(channel.id)}
@@ -65,6 +73,9 @@ function ChannelCardComponent({
         }}
       />
       <div className="channel-card-visual">
+        {sceneRoleLabel ? (
+          <span className={`channel-scene-role is-${sceneAssignmentState}`}>{sceneRoleLabel}</span>
+        ) : null}
         {canReorder ? (
           <span className="channel-reorder-handle" title={`Drag to reorder ${channel.name}`} aria-hidden="true">
             <svg viewBox="0 0 16 16" focusable="false"><path d="M3 4h10M3 8h10M3 12h10"></path></svg>

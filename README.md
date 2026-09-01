@@ -123,6 +123,8 @@ That last point is intentional: the SQLite show file lives under the persistent 
 - programs channel names, patching, trim, and rolling-record flags
 - creates, reorders, and edits scenes
 - maps scene cues to OSC and/or MIDI patterns
+- gives each scene a portable `/micwise/scene/{scene-number}` OSC trigger by default; send the address without arguments from a one-shot QLab Network cue, and add an argument only when an extra match filter is useful
+- leaves MIDI patterns unset by default
 - configures optional external scene sync settings
 - configures optional RChat alert delivery, flash/hold behaviour, display name, and network interface
 

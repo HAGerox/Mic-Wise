@@ -5,10 +5,10 @@ import Sortable from 'sortablejs';
 import { ChannelCard } from './ChannelCard';
 import { dbToLinearGain, meterRatioFromLinear, linearToDbfs, sortChannels } from '../lib/format';
 import { getShowChannelVisualState } from '../lib/ui-logic';
-import type { AudioAlertResponse, ChannelResponse, MeterChannelSnapshot, SceneResponse } from '../types/api';
+import type { AudioAlertResponse, ChannelResponse, MeterChannelSnapshot, SceneAssignmentState, SceneResponse } from '../types/api';
 import type { ActiveView, ChannelCardState, ChannelSelectionModifiers, ChannelStatusTone, ShowChannelVisualState } from '../types/ui';
 
-function getSceneAssignmentState(scene: SceneResponse | null, channelId: number): string {
+function getSceneAssignmentState(scene: SceneResponse | null, channelId: number): SceneAssignmentState {
   if (!scene) {
     return 'off';
   }
@@ -99,6 +99,9 @@ export function ChannelGrid({
       const peakLinear = meter ? Math.max(rmsLinear, meter.peak * combinedGainLinear) : 0;
       const historyRatios = meterHistory.map((value) => meterRatioFromLinear(value * combinedGainLinear));
       const visualState = getVisualState(activeView, activeScene, checklist, channel.id);
+      const sceneAssignmentState = activeView === 'show'
+        ? getSceneAssignmentState(activeScene, channel.id)
+        : null;
       const activeAlert = activeAlertsByChannelId.get(channel.id) ?? null;
       const isSelected = selectedChannelIds.has(channel.id);
 
@@ -117,6 +120,7 @@ export function ChannelGrid({
         isSelected,
         canReorder: activeView === 'monitor',
         visualState,
+        sceneAssignmentState,
         statusTone: getStatusTone(visualState, isSelected, activeAlert),
       };
     });

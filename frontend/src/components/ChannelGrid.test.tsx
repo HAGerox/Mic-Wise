@@ -212,4 +212,30 @@ describe('ChannelGrid layout ordering', () => {
     expect(onToggleChecklist).toHaveBeenCalledWith(channel.id);
     expect(onInteractChannel).not.toHaveBeenCalled();
   });
+
+  it('keeps On Stage and About to Enter visibly distinct before and after checks', () => {
+    const onstageChannel = buildChannel(1, 0);
+    const readyChannel = buildChannel(2, 1);
+    const { container } = renderGrid([onstageChannel, readyChannel], {
+      activeView: 'show',
+      activeScene: {
+        id: 4,
+        name: 'Scene 4',
+        order_index: 3,
+        sync_osc_address: '/micwise/scene/4',
+        sync_osc_argument: null,
+        sync_midi_pattern: null,
+        channel_assignments: [
+          { channel_id: onstageChannel.id, state: 'onstage' },
+          { channel_id: readyChannel.id, state: 'ready' },
+        ],
+      },
+      checklist: new Set([onstageChannel.id, readyChannel.id]),
+    });
+
+    expect(screen.getByText('On stage')).toBeInTheDocument();
+    expect(screen.getByText('About to enter')).toBeInTheDocument();
+    expect(container.querySelector('[data-channel-id="1"]')).toHaveClass('is-scene-onstage', 'is-show-checked');
+    expect(container.querySelector('[data-channel-id="2"]')).toHaveClass('is-scene-ready', 'is-show-checked');
+  });
 });

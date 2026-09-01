@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { buildExternalSyncStatusText } from '../lib/ui-logic';
+import { buildExternalSyncStatusText, getSceneAssignmentsAfterPaint } from '../lib/ui-logic';
 import { clampGainDb, sortChannels, sortScenes } from '../lib/format';
 import type {
   AudioInputDeviceResponse,
@@ -309,6 +309,7 @@ export function SetupView({
   const [sceneAssignments, setSceneAssignments] = useState<Record<number, SceneAssignmentState>>({});
   const [sceneStateBrush, setSceneStateBrush] = useState<SceneAssignmentState>('onstage');
   const sceneAssignmentsRef = useRef<Record<number, SceneAssignmentState>>({});
+  const scenePaintAnchorChannelIdRef = useRef<number | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -348,6 +349,7 @@ export function SetupView({
       (activeScene?.channel_assignments ?? []).map((assignment) => [assignment.channel_id, assignment.state]),
     ) as Record<number, SceneAssignmentState>;
     sceneAssignmentsRef.current = nextAssignments;
+    scenePaintAnchorChannelIdRef.current = null;
     setSceneAssignments(nextAssignments);
   }, [activeScene]);
 
@@ -366,17 +368,25 @@ export function SetupView({
     { off: 0, ready: 0, onstage: 0 },
   );
 
-  const applySceneState = (channelId: number, nextState: SceneAssignmentState): void => {
-    const currentAssignments = sceneAssignmentsRef.current;
-
-    if (!activeScene || (currentAssignments[channelId] ?? 'off') === nextState) {
+  const applySceneState = (channelId: number, range: boolean): void => {
+    if (!activeScene) {
       return;
     }
 
-    const nextAssignments = {
-      ...currentAssignments,
-      [channelId]: nextState,
-    };
+    const result = getSceneAssignmentsAfterPaint({
+      orderedChannelIds: orderedChannels.map((channel) => channel.id),
+      assignments: sceneAssignmentsRef.current,
+      anchorChannelId: scenePaintAnchorChannelIdRef.current,
+      channelId,
+      brush: sceneStateBrush,
+      range,
+    });
+    scenePaintAnchorChannelIdRef.current = result.anchorChannelId;
+    if (!result.changed) {
+      return;
+    }
+
+    const nextAssignments = result.assignments;
     sceneAssignmentsRef.current = nextAssignments;
     setSceneAssignments(nextAssignments);
     const payload: SceneChannelAssignmentRequest[] = orderedChannels.map((orderedChannel) => ({
@@ -712,7 +722,7 @@ export function SetupView({
               <details className="settings-disclosure scene-cue-disclosure">
                 <summary>
                   <span>Scene cue mapping</span>
-                  <small>Optional OSC or MIDI trigger</small>
+                  <small>OSC recommended; MIDI optional</small>
                 </summary>
                 <div className="scene-sync-grid">
                   <label className="field-group" htmlFor="scene-sync-osc-address">
@@ -721,7 +731,7 @@ export function SetupView({
                       id="scene-sync-osc-address"
                       type="text"
                       value={sceneCueForm.sync_osc_address}
-                      placeholder="/qlab/scene/2"
+                      placeholder="/micwise/scene/2"
                       onChange={(event) => {
                         setSceneCueForm({ ...sceneCueForm, sync_osc_address: event.target.value });
                       }}
@@ -737,12 +747,12 @@ export function SetupView({
                     />
                   </label>
                   <label className="field-group" htmlFor="scene-sync-osc-argument">
-                    <span>OSC first argument</span>
+                    <span>OSC first argument (optional)</span>
                     <input
                       id="scene-sync-osc-argument"
                       type="text"
                       value={sceneCueForm.sync_osc_argument}
-                      placeholder="GO"
+                      placeholder="No argument required"
                       onChange={(event) => {
                         setSceneCueForm({ ...sceneCueForm, sync_osc_argument: event.target.value });
                       }}
@@ -785,7 +795,7 @@ export function SetupView({
                 <div className="scene-status-programmer-header">
                   <div>
                     <h3 id="scene-status-programmer-title">Paint channel states</h3>
-                    <p>Choose a status, then click channel numbers to program this scene in one pass.</p>
+                    <p>Click to paint. Shift-click another channel to paint the inclusive range.</p>
                   </div>
 
                   <div className="scene-status-brushes" role="radiogroup" aria-label="Scene status brush">
@@ -809,7 +819,6 @@ export function SetupView({
                 <div id="scene-table-body" className="scene-status-grid" aria-label="Channel scene status">
                   {orderedChannels.map((channel) => {
                     const sceneState = sceneAssignments[channel.id] ?? 'off';
-                    const sceneStateOption = getSceneStateOption(sceneState);
                     return (
                       <button
                         key={channel.id}
@@ -817,15 +826,11 @@ export function SetupView({
                         data-channel-id={String(channel.id)}
                         className={`scene-status-tile is-${sceneState}`}
                         disabled={!activeScene}
-                        aria-label={`Set channel ${channel.number}, ${channel.name}, to ${getSceneStateOption(sceneStateBrush).label}`}
-                        title={`${channel.name}: ${sceneStateOption.label}`}
-                        onClick={() => applySceneState(channel.id, sceneStateBrush)}
+                        aria-label={`Paint channel ${channel.number}, ${channel.name}, with ${getSceneStateOption(sceneStateBrush).label}`}
+                        title={`Channel ${channel.number} · ${channel.name} · ${getSceneStateOption(sceneState).label}`}
+                        onClick={(event) => applySceneState(channel.id, event.shiftKey)}
                       >
                         <span className="scene-status-channel-number">{channel.number}</span>
-                        <span className="scene-status-channel-copy">
-                          <strong>{channel.name}</strong>
-                          <span>{sceneStateOption.label}</span>
-                        </span>
                       </button>
                     );
                   })}

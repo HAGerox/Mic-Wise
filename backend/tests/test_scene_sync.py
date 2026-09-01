@@ -53,6 +53,16 @@ def test_scene_matches_event_for_osc_and_midi_patterns() -> None:
         ),
     ) is True
 
+    argument_free_scene = SimpleNamespace(
+        sync_osc_address="/micwise/scene/3",
+        sync_osc_argument=None,
+        sync_midi_pattern=None,
+    )
+    assert scene_matches_event(
+        argument_free_scene,
+        ExternalSyncEvent(transport="osc", osc_address="/micwise/scene/3"),
+    ) is True
+
 
 def test_apply_scene_sync_event_updates_active_scene_when_enabled(tmp_path) -> None:
     settings = MicWiseSettings(

@@ -75,6 +75,9 @@ def test_initialise_show_file_seeds_default_records(tmp_path) -> None:
             scenes = await list_scenes(database)
             assert len(scenes) == 1
             assert scenes[0].name == "Scene 1"
+            assert scenes[0].sync_osc_address == "/micwise/scene/1"
+            assert scenes[0].sync_osc_argument is None
+            assert scenes[0].sync_midi_pattern is None
         finally:
             await database.dispose()
 
@@ -115,6 +118,48 @@ def test_initialise_show_file_preserves_deleted_channels(tmp_path) -> None:
             await database.dispose()
 
     asyncio.run(scenario())
+
+
+def test_initialise_show_file_seeds_legacy_scene_osc_defaults_once(tmp_path) -> None:
+    settings = MicWiseSettings(
+        data_directory=tmp_path,
+        show_filename="legacy_osc_show.micwise",
+        buffer_filename="legacy_osc_audio.buffer",
+        default_sample_rate=48_000,
+        default_channel_count=2,
+        default_buffer_duration_sec=300,
+        default_block_size=480,
+    )
+    settings.ensure_directories()
+
+    async def seed_current_schema() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+        finally:
+            await database.dispose()
+
+    asyncio.run(seed_current_schema())
+
+    with sqlite3.connect(settings.show_path) as connection:
+        connection.execute("UPDATE scenes SET sync_osc_address = NULL")
+        connection.execute("UPDATE settings SET scene_osc_defaults_seeded = 0")
+
+    async def migrate_and_preserve_later_clear() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            scenes = await list_scenes(database)
+            assert scenes[0].sync_osc_address == "/micwise/scene/1"
+
+            await update_scene(database, scenes[0].id, {"sync_osc_address": None})
+            await initialise_show_file(database, settings)
+            scenes_after_clear = await list_scenes(database)
+            assert scenes_after_clear[0].sync_osc_address is None
+        finally:
+            await database.dispose()
+
+    asyncio.run(migrate_and_preserve_later_clear())
 
 
 def test_initialise_show_file_migrates_radioworld_settings_to_rchat(tmp_path) -> None:
@@ -205,6 +250,11 @@ def test_scene_crud_and_channel_delete_resequencing(tmp_path) -> None:
             assert created_scene.name == "Quick change"
             assert created_scene.sync_osc_address == "/qlab/quick-change"
 
+            default_scene = await create_scene(database)
+            assert default_scene.sync_osc_address == "/micwise/scene/3"
+            assert default_scene.sync_osc_argument is None
+            assert default_scene.sync_midi_pattern is None
+
             updated_scene = await update_scene(
                 database,
                 created_scene.id,
@@ -222,7 +272,10 @@ def test_scene_crud_and_channel_delete_resequencing(tmp_path) -> None:
             assert [assignment.state for assignment in updated_scene.channel_assignments] == ["ready"]
 
             scenes = await list_scenes(database)
-            assert [scene.name for scene in scenes] == ["Quick change", "Scene 1"]
+            assert [scene.name for scene in scenes] == ["Quick change", "Scene 1", "Scene 3"]
+            assert scenes[0].sync_osc_address == "/qlab/quick-change"
+            assert scenes[1].sync_osc_address == "/micwise/scene/2"
+            assert scenes[2].sync_osc_address == "/micwise/scene/3"
 
             deleted_scene = await delete_scene(database, created_scene.id)
             assert deleted_scene is True

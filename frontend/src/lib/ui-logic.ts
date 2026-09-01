@@ -1,4 +1,4 @@
-import type { SceneResponse, SceneSyncStatusResponse } from '../types/api';
+import type { SceneAssignmentState, SceneResponse, SceneSyncStatusResponse } from '../types/api';
 import type { ActiveView, ShowChannelVisualState } from '../types/ui';
 
 interface ChannelSelectionRequest {
@@ -13,6 +13,67 @@ interface ChannelSelectionRequest {
 export interface ChannelSelectionResult {
   selectedChannelIds: number[];
   anchorChannelId: number | null;
+}
+
+interface SceneAssignmentPaintRequest {
+  orderedChannelIds: number[];
+  assignments: Readonly<Record<number, SceneAssignmentState>>;
+  anchorChannelId: number | null;
+  channelId: number;
+  brush: SceneAssignmentState;
+  range: boolean;
+}
+
+export interface SceneAssignmentPaintResult {
+  assignments: Record<number, SceneAssignmentState>;
+  anchorChannelId: number | null;
+  changed: boolean;
+}
+
+export function getSceneAssignmentsAfterPaint({
+  orderedChannelIds,
+  assignments,
+  anchorChannelId,
+  channelId,
+  brush,
+  range,
+}: SceneAssignmentPaintRequest): SceneAssignmentPaintResult {
+  const validOrderedIds = orderedChannelIds.filter((id, index) => (
+    Number.isInteger(id) && orderedChannelIds.indexOf(id) === index
+  ));
+  if (!validOrderedIds.includes(channelId)) {
+    return { assignments: { ...assignments }, anchorChannelId, changed: false };
+  }
+
+  const resolvedAnchor = range && anchorChannelId !== null && validOrderedIds.includes(anchorChannelId)
+    ? anchorChannelId
+    : channelId;
+  const startIndex = validOrderedIds.indexOf(resolvedAnchor);
+  const endIndex = validOrderedIds.indexOf(channelId);
+  const paintedChannelIds = range
+    ? validOrderedIds.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1)
+    : [channelId];
+  const shouldClear = brush !== 'off' && paintedChannelIds.every((id) => (assignments[id] ?? 'off') === brush);
+  const nextState: SceneAssignmentState = shouldClear ? 'off' : brush;
+  const changed = paintedChannelIds.some((id) => (assignments[id] ?? 'off') !== nextState);
+
+  if (!changed) {
+    return {
+      assignments: { ...assignments },
+      anchorChannelId: range ? resolvedAnchor : channelId,
+      changed: false,
+    };
+  }
+
+  const nextAssignments = { ...assignments };
+  paintedChannelIds.forEach((id) => {
+    nextAssignments[id] = nextState;
+  });
+  return {
+    assignments: nextAssignments,
+    anchorChannelId: range ? resolvedAnchor : channelId,
+    changed: true,
+  };
 }
 
 export function getChannelSelectionAfterInteraction({

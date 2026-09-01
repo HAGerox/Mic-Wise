@@ -18,6 +18,11 @@ SHOWFILE_FORMAT = "micwise-showfile"
 SHOWFILE_FORMAT_VERSION = 1
 
 
+def default_scene_osc_address(order_index: int) -> str:
+    """Return the portable, argument-free OSC trigger for a scene order position."""
+    return f"/micwise/scene/{max(0, int(order_index)) + 1}"
+
+
 def _normalise_optional_text(value: object | None) -> str | None:
     """Normalize empty string-like values into ``None``."""
     if value is None:
@@ -82,6 +87,12 @@ async def _ensure_show_file_compatibility(database: DatabaseManager) -> None:
             await connection.execute(
                 text(
                     "ALTER TABLE settings ADD COLUMN external_sync_midi_input_name VARCHAR(128)",
+                ),
+            )
+        if settings_columns and "scene_osc_defaults_seeded" not in settings_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE settings ADD COLUMN scene_osc_defaults_seeded BOOLEAN NOT NULL DEFAULT 0",
                 ),
             )
         if settings_columns and "audio_input_device" not in settings_columns:
@@ -234,13 +245,26 @@ async def initialise_show_file(
                     ),
                 )
 
-        existing_scene_count = len((await session.scalars(select(Scene))).all())
-        if existing_scene_count == 0:
-            starter_scene = Scene(name="Scene 1", order_index=0)
+        existing_scenes = list(
+            (await session.scalars(select(Scene).order_by(Scene.order_index, Scene.id))).all(),
+        )
+        if not existing_scenes:
+            starter_scene = Scene(
+                name="Scene 1",
+                order_index=0,
+                sync_osc_address=default_scene_osc_address(0),
+            )
             session.add(starter_scene)
             await session.flush()
+            existing_scenes = [starter_scene]
             if settings_row.active_scene_id is None:
                 settings_row.active_scene_id = starter_scene.id
+
+        if not settings_row.scene_osc_defaults_seeded:
+            for scene in existing_scenes:
+                if scene.sync_osc_address is None:
+                    scene.sync_osc_address = default_scene_osc_address(scene.order_index)
+            settings_row.scene_osc_defaults_seeded = True
 
         await session.commit()
         await session.refresh(settings_row)
@@ -282,6 +306,11 @@ async def _apply_channel_sequence(session, ordered_channels: list[Channel]) -> N
 
 async def _apply_scene_order(session, ordered_scenes: list[Scene]) -> None:
     """Reassign scene order indexes without violating unique constraints."""
+    default_address_scene_ids = {
+        scene.id
+        for scene in ordered_scenes
+        if scene.sync_osc_address == default_scene_osc_address(scene.order_index)
+    }
     for temp_index, scene in enumerate(ordered_scenes, start=1):
         scene.order_index = -temp_index
 
@@ -289,6 +318,8 @@ async def _apply_scene_order(session, ordered_scenes: list[Scene]) -> None:
 
     for order_index, scene in enumerate(ordered_scenes):
         scene.order_index = order_index
+        if scene.id in default_address_scene_ids:
+            scene.sync_osc_address = default_scene_osc_address(order_index)
 
 
 async def _replace_scene_assignments(
@@ -618,10 +649,15 @@ async def import_showfile(database: DatabaseManager, payload: dict[str, object])
 
         order_index_to_scene_id: dict[int, int] = {}
         for order_index, scene_payload in enumerate(scenes_payload):
+            scene_order_index = int(scene_payload.get("order_index", order_index) or order_index)
             scene = Scene(
                 name=str(scene_payload.get("name") or f"Scene {order_index + 1}").strip() or f"Scene {order_index + 1}",
-                order_index=int(scene_payload.get("order_index", order_index) or order_index),
-                sync_osc_address=_normalise_optional_text(scene_payload.get("sync_osc_address")),
+                order_index=scene_order_index,
+                sync_osc_address=(
+                    _normalise_optional_text(scene_payload.get("sync_osc_address"))
+                    if "sync_osc_address" in scene_payload
+                    else default_scene_osc_address(scene_order_index)
+                ),
                 sync_osc_argument=_normalise_optional_text(scene_payload.get("sync_osc_argument")),
                 sync_midi_pattern=_normalise_optional_text(scene_payload.get("sync_midi_pattern")),
             )
@@ -678,6 +714,7 @@ async def create_scene(
         scene = Scene(
             name=f"Scene {next_order_index + 1}",
             order_index=next_order_index,
+            sync_osc_address=default_scene_osc_address(next_order_index),
         )
         session.add(scene)
         await session.flush()

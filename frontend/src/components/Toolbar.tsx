@@ -3,7 +3,6 @@ import type { ActiveView } from '../types/ui';
 interface ToolbarProps {
   activeView: ActiveView;
   selectedCount: number;
-  statusText: string;
   activeSceneName: string;
   nextSceneName: string | null;
   showCheckedCount: number;
@@ -18,7 +17,6 @@ interface ToolbarProps {
 export function Toolbar({
   activeView,
   selectedCount,
-  statusText,
   activeSceneName,
   nextSceneName,
   showCheckedCount,
@@ -29,8 +27,6 @@ export function Toolbar({
   onStopListening,
   onNavigateScene,
 }: ToolbarProps): JSX.Element {
-  const showStatusText = statusText !== 'Online' && statusText !== 'Streaming';
-
   return (
     <section className={`controls toolbar ${activeView === 'show' ? 'is-show-view' : ''}`}>
       <div className="toolbar-main">
@@ -124,12 +120,6 @@ export function Toolbar({
           </button>
         </div>
       </div>
-
-      {showStatusText ? (
-        <div className="toolbar-status-strip" aria-label="Current context">
-          <span id="status-text" className="toolbar-notice" role="status">{statusText}</span>
-        </div>
-      ) : null}
     </section>
   );
 }
