@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from zeroconf import ServiceInfo, Zeroconf
 
@@ -16,6 +16,7 @@ class ZeroconfService:
     port: int
     service_type: str = "_micwise._tcp.local."
     host_ip: str | None = None
+    properties: dict[bytes, bytes] = field(default_factory=dict)
     zeroconf: Zeroconf | None = None
     service_info: ServiceInfo | None = None
 
@@ -28,7 +29,7 @@ class ZeroconfService:
             name=f"{self.service_name}.{self.service_type}",
             addresses=[socket.inet_aton(host_ip)],
             port=self.port,
-            properties={b"path": b"/"},
+            properties={b"path": b"/", **self.properties},
             server=f"{self.service_name}.local.",
         )
         self.zeroconf.register_service(self.service_info)

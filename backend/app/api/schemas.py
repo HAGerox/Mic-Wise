@@ -15,7 +15,11 @@ SceneSyncTransport = Literal["off", "osc", "midi", "both"]
 class HealthResponse(BaseModel):
     """High-level backend health snapshot."""
 
+    app: str = "micwise"
     status: str
+    version: str
+    show_name: str
+    show_filename: str
     audio_engine_running: bool
 
 
@@ -172,6 +176,7 @@ class SceneChannelAssignmentResponse(BaseModel):
 
     channel_id: int
     state: str
+    checked: bool = False
 
 
 class SceneChannelAssignmentRequest(BaseModel):
@@ -179,6 +184,14 @@ class SceneChannelAssignmentRequest(BaseModel):
 
     channel_id: int
     state: str
+    checked: bool | None = None
+
+
+class SceneChecklistUpdateRequest(BaseModel):
+    """A single scene mic-check tick."""
+
+    channel_id: int
+    checked: bool
 
 
 class SceneCreateRequest(BaseModel):
@@ -288,6 +301,7 @@ class ShowfileSceneAssignmentPayload(BaseModel):
 
     channel_number: int
     state: str
+    checked: bool = False
 
 
 class ShowfileChannelPayload(BaseModel):
@@ -296,6 +310,8 @@ class ShowfileChannelPayload(BaseModel):
     number: int
     name: str
     photo_path: str | None = None
+    photo_asset: str | None = None
+    photo_url: str | None = None
     input_index: int | None = None
     gain_db: float = 0.0
     is_record_enabled: bool = True
@@ -372,6 +388,15 @@ class ShowfileImportResponse(BaseModel):
     status: str
     channels: int
     scenes: int
+    assets: int = 0
+    format: str = "showfile"
+
+
+class PhotoAssetResponse(BaseModel):
+    """A photo stored in the show's local asset library."""
+
+    photo_path: str
+    file_name: str
 
 
 class WebRTCOfferRequest(BaseModel):

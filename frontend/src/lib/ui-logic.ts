@@ -436,3 +436,48 @@ export function buildWaveformRulerMarks(
 
   return marks;
 }
+
+export function getSceneChecklistFromAssignments(
+  assignments: Pick<SceneResponse['channel_assignments'][number], 'channel_id' | 'checked'>[] | null | undefined,
+): Set<number> {
+  const checked = new Set<number>();
+  for (const assignment of assignments ?? []) {
+    if (assignment.checked) {
+      checked.add(assignment.channel_id);
+    }
+  }
+  return checked;
+}
+
+export interface StageBackupLinkRequest {
+  host?: string | null;
+  port?: number | null;
+  showName?: string | null;
+}
+
+export function buildStageBackupUri(request: StageBackupLinkRequest = {}): string {
+  const params = new URLSearchParams({ target: 'micwise' });
+  if (request.host) {
+    params.set('host', request.host);
+  }
+  if (request.port != null) {
+    params.set('port', String(request.port));
+  }
+  if (request.showName) {
+    params.set('show', request.showName);
+  }
+  return `stage-backup://backup?${params.toString()}`;
+}
+
+export function describeImportSummary(summary: {
+  channels: number;
+  scenes: number;
+  assets?: number;
+  format?: string;
+}): string {
+  const parts = [`${summary.channels} channels`, `${summary.scenes} scenes`];
+  if (summary.assets) {
+    parts.push(`${summary.assets} photos`);
+  }
+  return `Imported ${parts.join(', ')}`;
+}

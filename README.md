@@ -14,7 +14,7 @@ The current repository is a Python backend plus a React + Vite + TypeScript fron
 - a seeded SQLite show file storing settings, channels, and scenes
 - a React browser UI built with Vite and served by the backend as static assets, with **Monitor**, **Show**, and **Setup** views
 - waveform preview and scrub-back listening for the last five minutes
-- optional Zeroconf discovery
+- Zeroconf discovery advertising `_micwise._tcp` so Stage Backup finds this show automatically
 - optional OSC / MIDI scene sync runtime in `backend/app/sync/service.py`
 - optional RChat UDP alert notifications with configurable sender name and network interface
 
@@ -96,7 +96,7 @@ On a clean first run, the current backend defaults are:
 - channel count: `16`
 - rolling buffer duration: `300` seconds
 - block size: `480` frames
-- Zeroconf discovery: disabled
+- Zeroconf discovery: enabled
 - show file: `backend/data/default.micwise`
 - shared buffer file: a local runtime path under the system temp directory, namespaced by port
 
@@ -115,18 +115,53 @@ That last point is intentional: the SQLite show file lives under the persistent 
 ### Show
 
 - filters the monitoring workflow through the active scene
-- tracks a mic-check style checklist for scene members
+- tracks a mic-check style checklist for scene members, persisted with the show
 - supports keyboard shortcuts for checking and unchecking channels
 
 ### Setup
 
 - programs channel names, patching, trim, and rolling-record flags
+- uploads channel photos into the show's local asset library, so they travel with backups
 - creates, reorders, and edits scenes
 - maps scene cues to OSC and/or MIDI patterns
 - gives each scene a portable `/micwise/scene/{scene-number}` OSC trigger by default; send the address without arguments from a one-shot QLab Network cue, and add an argument only when an extra match filter is useful
 - leaves MIDI patterns unset by default
 - configures optional external scene sync settings
 - configures optional RChat alert delivery, flash/hold behaviour, display name, and network interface
+
+## Show backups and Stage Backup
+
+Export produces a self-contained show archive:
+
+```text
+<show name>.micwise.zip
+├── micwise-showfile.micwise.json   # portable showfile (format version 2)
+├── assets/photos/<sha256>.<ext>    # embedded channel photos
+└── backup.json                     # member sizes + SHA-256 checksums
+```
+
+Restoring that archive into any Mic-Wise session reproduces the show exactly:
+channels, photos, scene staging, mic-check ticks, and every setting. Every member
+is size- and checksum-verified on import, and paths that would escape the photo
+library are rejected. A plain `.micwise.json` showfile is still accepted for
+lightweight sharing, and showfiles exported by earlier versions (format version 1)
+import unchanged.
+
+Photos can be a remote URL or an upload. Uploaded photos live under
+`data_directory/assets/photos/` and are embedded in the archive; remote URLs are
+snapshotted into the archive when reachable and otherwise carried as URLs.
+
+**Stage Backup** finds this show automatically. Mic-Wise advertises
+`_micwise._tcp` over Zeroconf (disable with `MICWISE_ZEROCONF_ENABLED=false`)
+with the show name in its TXT records, and `GET /api/health` answers an HTTP
+probe with `{app, version, show_name, show_filename}`. Stage Backup pulls
+`GET /api/showfile/export?format=archive` and writes
+`<backup folder>/Mic-Wise/<UTC timestamp>_<Show>.micwise.zip`.
+
+Setup → General → Showfile has a **Back up now** link (`stage-backup://backup?target=micwise`)
+that opens Stage Backup and runs a one-click backup of this show, when Stage Backup
+is installed on the same machine. Across the network, use the single **Back up now**
+button in Stage Backup itself.
 
 ## Configuration
 
@@ -148,6 +183,7 @@ Current runtime settings include:
 - `MICWISE_METER_WINDOW_MS`
 - `MICWISE_METER_POLL_INTERVAL_MS`
 - `MICWISE_ZEROCONF_ENABLED` (`true` / `false`)
+- `MICWISE_PHOTO_UPLOAD_MAX_BYTES`
 
 ## Frontend development
 

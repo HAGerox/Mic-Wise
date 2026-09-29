@@ -129,3 +129,22 @@ describe('appStateReducer', () => {
     expect(nextState.modalScrubSeconds).toBe(0);
   });
 });
+
+describe('hydrateSceneChecklists', () => {
+  it('replaces checklist state from persisted scene assignments', () => {
+    const initial = {
+      ...appStateReducer(
+        { ...initialAppState, statusText: '' },
+        { type: 'toggleSceneChecklist', payload: { sceneId: 1, channelId: 9 } },
+      ),
+    };
+    expect(initial.sceneChecklistById.get(1)?.has(9)).toBe(true);
+
+    const next = appStateReducer(initial, {
+      type: 'hydrateSceneChecklists',
+      payload: new Map([[2, new Set<number>([3, 4])]]),
+    });
+    expect(next.sceneChecklistById.get(1)).toBeUndefined();
+    expect([...(next.sceneChecklistById.get(2) ?? [])]).toEqual([3, 4]);
+  });
+});

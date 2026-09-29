@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 
 from app.core.settings import MicWiseSettings
@@ -11,14 +12,35 @@ from app.database.repository import (
     create_scene,
     delete_channel,
     delete_scene,
+    export_show_archive,
+    export_showfile,
+    get_scene,
     get_settings,
+    import_show_archive,
+    import_showfile,
     initialise_show_file,
     list_channels,
     list_scenes,
+    set_scene_channel_checked,
+    store_photo_asset,
     update_scene,
     update_channel,
 )
 from app.database.session import DatabaseManager
+
+
+def build_settings(tmp_path, show_filename: str = "test_show.micwise") -> MicWiseSettings:
+    settings = MicWiseSettings(
+        data_directory=tmp_path,
+        show_filename=show_filename,
+        buffer_filename="test_audio.buffer",
+        default_sample_rate=48_000,
+        default_channel_count=4,
+        default_buffer_duration_sec=300,
+        default_block_size=480,
+    )
+    settings.ensure_directories()
+    return settings
 
 
 def test_initialise_show_file_seeds_default_records(tmp_path) -> None:
@@ -282,6 +304,285 @@ def test_scene_crud_and_channel_delete_resequencing(tmp_path) -> None:
 
             settings_row = await get_settings(database)
             assert settings_row.active_scene_id == scenes[1].id
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_scene_checklist_ticks_persist_beyond_off_state(tmp_path) -> None:
+    settings = build_settings(tmp_path, "checklist.micwise")
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            channels = await list_channels(database)
+            scenes = await list_scenes(database)
+            scene_id = scenes[0].id
+
+            assert await set_scene_channel_checked(database, scene_id, channels[0].id, True) is True
+            scene = await get_scene(database, scene_id)
+            assert [
+                (assignment.channel_id, assignment.state, assignment.checked)
+                for assignment in scene.channel_assignments
+            ] == [(channels[0].id, "off", True)]
+
+            await update_scene(
+                database,
+                scene_id,
+                {
+                    "channel_assignments": [
+                        {"channel_id": channels[0].id, "state": "onstage"},
+                        {"channel_id": channels[1].id, "state": "off", "checked": True},
+                    ],
+                },
+            )
+            scene = await get_scene(database, scene_id)
+            by_channel = {assignment.channel_id: assignment for assignment in scene.channel_assignments}
+            assert by_channel[channels[0].id].state == "onstage"
+            assert by_channel[channels[0].id].checked is True
+            assert by_channel[channels[1].id].state == "off"
+            assert by_channel[channels[1].id].checked is True
+
+            await update_scene(
+                database,
+                scene_id,
+                {
+                    "channel_assignments": [
+                        {"channel_id": channels[0].id, "state": "onstage", "checked": False},
+                    ],
+                },
+            )
+            scene = await get_scene(database, scene_id)
+            assert [
+                (assignment.channel_id, assignment.state, assignment.checked)
+                for assignment in scene.channel_assignments
+            ] == [(channels[0].id, "onstage", False)]
+
+            assert await set_scene_channel_checked(database, scene_id, channels[1].id, False) is True
+            scene = await get_scene(database, scene_id)
+            assert [assignment.channel_id for assignment in scene.channel_assignments] == [channels[0].id]
+
+            assert await set_scene_channel_checked(database, scene_id, 9999, True) is False
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_showfile_v1_payload_still_imports(tmp_path) -> None:
+    settings = build_settings(tmp_path, "legacy.micwise")
+    legacy_payload = {
+        "format": "micwise-showfile",
+        "version": 1,
+        "settings": {
+            "sample_rate": 48000,
+            "channel_count": 2,
+            "buffer_duration_sec": 300,
+            "block_size": 480,
+            "audio_source_mode": "synthetic",
+            "audio_input_device": None,
+            "master_gain_db": 1.5,
+            "multi_listen_enabled": False,
+            "active_mode": "monitor",
+            "scene_mode_enabled": True,
+            "active_scene_order_index": 0,
+            "external_sync_enabled": False,
+            "external_sync_transport": "off",
+            "external_sync_osc_host": "0.0.0.0",
+            "external_sync_osc_port": 53001,
+            "external_sync_midi_input_name": None,
+        },
+        "channels": [
+            {"number": 1, "name": "Lead", "photo_path": "https://example.com/a.jpg"},
+            {"number": 2, "name": "Swing"},
+        ],
+        "scenes": [
+            {
+                "name": "Act 1",
+                "order_index": 0,
+                "channel_assignments": [{"channel_number": 1, "state": "ready"}],
+            },
+        ],
+    }
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            imported = await import_showfile(database, legacy_payload, settings)
+            assert imported.master_gain_db == 1.5
+
+            channels = await list_channels(database)
+            assert [channel.name for channel in channels] == ["Lead", "Swing"]
+            assert channels[0].photo_path == "https://example.com/a.jpg"
+
+            scenes = await list_scenes(database)
+            assert scenes[0].name == "Act 1"
+            assert [
+                (assignment.channel_id, assignment.state, assignment.checked)
+                for assignment in scenes[0].channel_assignments
+            ] == [(channels[0].id, "ready", False)]
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_showfile_rejects_unknown_version(tmp_path) -> None:
+    settings = build_settings(tmp_path, "future.micwise")
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            payload = await export_showfile(database, settings, embed_assets=False)
+            payload.pop("_assets", None)
+            payload["version"] = 99
+            try:
+                await import_showfile(database, payload, settings)
+            except ValueError as error:
+                assert "version" in str(error)
+            else:
+                raise AssertionError("expected a version mismatch")
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_show_archive_round_trips_photos(tmp_path) -> None:
+    settings = build_settings(tmp_path, "archive.micwise")
+    photo_bytes = b"\x89PNG\r\n\x1a\n" + b"payload"
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            photo_path = store_photo_asset(settings, photo_bytes, "performer.png", "image/png")
+            await update_channel(database, 1, {"name": "Lead", "photo_path": photo_path})
+            scenes = await list_scenes(database)
+            await set_scene_channel_checked(database, scenes[0].id, 1, True)
+
+            archive_bytes = await export_show_archive(database, settings)
+
+            await update_channel(database, 1, {"name": "Wiped", "photo_path": None})
+            await set_scene_channel_checked(database, scenes[0].id, 1, False)
+
+            await import_show_archive(database, settings, archive_bytes)
+
+            channels = await list_channels(database)
+            assert channels[0].name == "Lead"
+            assert channels[0].photo_path == photo_path
+            restored = (settings.photos_directory / photo_path.rsplit("/", 1)[-1]).read_bytes()
+            assert restored == photo_bytes
+
+            scenes_after = await list_scenes(database)
+            assert [
+                (assignment.channel_id, assignment.state, assignment.checked)
+                for assignment in scenes_after[0].channel_assignments
+            ] == [(channels[0].id, "off", True)]
+
+            reexported = await export_show_archive(database, settings)
+            assert reexported == archive_bytes
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_show_archive_rejects_unlisted_members(tmp_path) -> None:
+    import io
+    import zipfile
+
+    settings = build_settings(tmp_path, "tamper.micwise")
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            archive_bytes = await export_show_archive(database, settings)
+        finally:
+            await database.dispose()
+
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            members = {name: archive.read(name) for name in archive.namelist()}
+        members["extra.txt"] = b"surprise"
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for name, content in members.items():
+                archive.writestr(name, content)
+
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            try:
+                await import_show_archive(database, settings, buffer.getvalue())
+            except ValueError as error:
+                assert "unlisted" in str(error)
+            else:
+                raise AssertionError("expected unlisted members to be rejected")
+
+            manifest = json.loads(members["backup.json"])
+            manifest["members"]["../../escape.png"] = {"kind": "asset", "size": 1, "sha256": "00"}
+            members["backup.json"] = json.dumps(manifest).encode("utf-8")
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                for name, content in members.items():
+                    archive.writestr(name, content)
+            try:
+                await import_show_archive(database, settings, buffer.getvalue())
+            except ValueError as error:
+                assert "photo library" in str(error) or "member path" in str(error)
+            else:
+                raise AssertionError("expected path escapes to be rejected")
+
+            manifest = json.loads(members["backup.json"])
+            manifest["members"].pop("../../escape.png", None)
+            manifest["members"]["other/thing.png"] = {"kind": "asset", "size": 1, "sha256": "00"}
+            members["backup.json"] = json.dumps(manifest).encode("utf-8")
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                for name, content in members.items():
+                    archive.writestr(name, content)
+            try:
+                await import_show_archive(database, settings, buffer.getvalue())
+            except ValueError as error:
+                assert "outside the photo library" in str(error)
+            else:
+                raise AssertionError("expected foreign members to be rejected")
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_create_scene_copies_checklist_ticks(tmp_path) -> None:
+    settings = build_settings(tmp_path, "copy.micwise")
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            channels = await list_channels(database)
+            scenes = await list_scenes(database)
+            await update_scene(
+                database,
+                scenes[0].id,
+                {
+                    "channel_assignments": [
+                        {"channel_id": channels[0].id, "state": "onstage", "checked": True},
+                    ],
+                },
+            )
+
+            created = await create_scene(database)
+            assert [
+                (assignment.channel_id, assignment.state, assignment.checked)
+                for assignment in created.channel_assignments
+            ] == [(channels[0].id, "onstage", True)]
         finally:
             await database.dispose()
 

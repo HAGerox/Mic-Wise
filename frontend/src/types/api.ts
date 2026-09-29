@@ -3,7 +3,11 @@ export type SceneAssignmentState = 'off' | 'ready' | 'onstage';
 export type AudioSourceMode = 'synthetic' | 'sounddevice';
 
 export interface HealthResponse {
+  app: string;
   status: string;
+  version: string;
+  show_name: string;
+  show_filename: string;
   audio_engine_running: boolean;
 }
 
@@ -122,11 +126,13 @@ export interface ChannelUpdateRequest {
 export interface SceneChannelAssignmentResponse {
   channel_id: number;
   state: SceneAssignmentState;
+  checked?: boolean;
 }
 
 export interface SceneChannelAssignmentRequest {
   channel_id: number;
   state: SceneAssignmentState;
+  checked?: boolean | null;
 }
 
 export interface SceneResponse {
@@ -205,12 +211,15 @@ export interface AudioAlertResponse {
 export interface ShowfileSceneAssignmentPayload {
   channel_number: number;
   state: SceneAssignmentState;
+  checked: boolean;
 }
 
 export interface ShowfileChannelPayload {
   number: number;
   name: string;
   photo_path: string | null;
+  photo_asset?: string | null;
+  photo_url?: string | null;
   input_index: number | null;
   gain_db: number;
   is_record_enabled: boolean;
@@ -267,7 +276,16 @@ export interface ShowfileImportResponse {
   status: string;
   channels: number;
   scenes: number;
+  assets: number;
+  format: 'showfile' | 'archive';
 }
+
+export interface PhotoAssetResponse {
+  photo_path: string;
+  file_name: string;
+}
+
+export type ShowfileExportFormat = 'archive' | 'json';
 
 export interface WebRtcOfferRequest {
   sdp: string;

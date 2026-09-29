@@ -4,7 +4,8 @@
 - Use `backend/app/audio/buffer.py` as the process boundary: the engine writes interleaved `int16` PCM to the shared `mmap` ring buffer, while analysis, alerts, waveform previews, and WebRTC read copied arrays from it.
 - Keep the `mmap` buffer disposable under `runtime_directory/port-{port}`; persisted show data belongs under `data_directory`, because cloud-synced mapped files caused macOS `SIGBUS`/truncation failures and multi-instance collisions.
 - Treat display channels as show-file rows independent of physical input capacity; deleting display channels is user intent and must not be undone by reseeding unless the show has no channels at all.
-- Showfile import/export is portable by show semantics, not database IDs: scene assignments round-trip by channel number, and the active scene by scene order index.
+- Showfile import/export is portable by show semantics, not database IDs: scene assignments round-trip by channel number, and the active scene by scene order index. Mic-check ticks (`scene_channels.checked`) round-trip with them and survive staging repaints, because omitting `checked` from an assignment payload preserves the previous tick rather than clearing it.
+- Show archives (`.micwise.zip`) are the complete backup form: the showfile plus every photo asset plus a SHA-256 manifest. Restoring one must reproduce channels, photos, scene staging, and mic-check ticks exactly.
 
 ## Audio and streaming
 
@@ -19,7 +20,7 @@
 - Optional host integrations fail soft: audio device discovery, Zeroconf, OSC, MIDI, network interface discovery, and RChat UDP should degrade to empty status/error info rather than breaking core monitoring.
 - RChat follows the installed 1.5 protocol documented in `docs/RChat UDP Protocol Specification.md`: source/destination port `1090`, payload `RWSENDIP{sender_ip}#USER{username}#{command}`, UTF-8 text via `KEYP{text}`, `COMM0` flash, `COMM1` unflash, and `COMM8` clear.
 - Audio input devices are persisted as stable `hostapi::device` selectors; `hardware` is only a UI/API alias that normalizes to `sounddevice`.
-- Scene sync matches normalized OSC/MIDI events against persisted scene cue fields and only changes `settings.active_scene_id`; it does not mutate frontend checklist state.
+- Scene sync matches normalized OSC/MIDI events against persisted scene cue fields and only changes `settings.active_scene_id`; it does not mutate mic-check tick state.
 
 ## Frontend
 

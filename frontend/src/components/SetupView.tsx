@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   buildExternalSyncStatusText,
+  buildStageBackupUri,
   getPointerStrokeSamplePoints,
   getScenePaintStrokeState,
 } from '../lib/ui-logic';
@@ -11,6 +12,7 @@ import type {
   ChannelResponse,
   ChannelUpdateRequest,
   NetworkInterfaceResponse,
+  PhotoAssetResponse,
   SceneAssignmentState,
   SceneChannelAssignmentRequest,
   SceneResponse,
@@ -71,11 +73,14 @@ interface ProgramRowProps {
   availableInputCount: number;
   onSave: (channelId: number, payload: ChannelUpdateRequest) => Promise<void>;
   onRemove: (channelId: number) => Promise<void>;
+  onUploadPhoto: (file: File) => Promise<PhotoAssetResponse>;
 }
 
-function ProgramRow({ channel, availableInputCount, onSave, onRemove }: ProgramRowProps): JSX.Element {
+function ProgramRow({ channel, availableInputCount, onSave, onRemove, onUploadPhoto }: ProgramRowProps): JSX.Element {
   const [draft, setDraft] = useState<ProgramChannelDraft>(() => toProgramDraft(channel));
   const timerRef = useRef<number | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(toProgramDraft(channel));
@@ -134,7 +139,7 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove }: ProgramR
             type="text"
             data-field="photo_path"
             aria-label={`Photo URL for ${channel.name}`}
-            placeholder="Image URL or /path"
+            placeholder="Image URL, or upload a photo"
             value={draft.photo_path}
             onChange={(event) => {
               setDraft({ ...draft, photo_path: event.target.value });
@@ -146,6 +151,37 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove }: ProgramR
               void onSave(channel.id, { ...nextDraft, photo_path: photoPath || null });
             }}
           />
+          <button
+            type="button"
+            className="secondary program-photo-upload"
+            onClick={() => photoInputRef.current?.click()}
+          >
+            Upload
+          </button>
+          <input
+            ref={photoInputRef}
+            className="is-hidden"
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              event.target.value = '';
+              if (!file) {
+                return;
+              }
+              setPhotoError(null);
+              void onUploadPhoto(file)
+                .then((asset) => {
+                  const nextDraft = { ...draft, photo_path: asset.photo_path };
+                  setDraft(nextDraft);
+                  return onSave(channel.id, { ...nextDraft, photo_path: asset.photo_path });
+                })
+                .catch((error: unknown) => {
+                  setPhotoError(error instanceof Error ? error.message : 'Photo upload failed');
+                });
+            }}
+          />
+          {photoError ? <span className="program-photo-error">{photoError}</span> : null}
         </div>
       </td>
       <td>
@@ -251,6 +287,7 @@ interface SetupViewProps {
   onResetChecklist: () => void;
   onExportShowfile: () => Promise<void>;
   onImportShowfile: (file: File) => Promise<void>;
+  onUploadPhoto: (file: File) => Promise<PhotoAssetResponse>;
   onTestRChat: () => Promise<void>;
 }
 
@@ -278,6 +315,7 @@ export function SetupView({
   onResetChecklist,
   onExportShowfile,
   onImportShowfile,
+  onUploadPhoto,
   onTestRChat,
 }: SetupViewProps): JSX.Element {
   const orderedChannels = useMemo(() => sortChannels(channels), [channels]);
@@ -498,17 +536,28 @@ export function SetupView({
               <section className="panel-card setup-summary-card setup-showfile-card">
           <div>
             <h3>Showfile</h3>
-            <p className="setup-helper-text">Export a portable backup, or replace this show with a Mic-Wise showfile.</p>
+            <p className="setup-helper-text">
+              Export a self-contained show archive with photos, or restore one here. Stage Backup picks this show up automatically.
+            </p>
           </div>
 
           <div className="panel-heading-actions">
-            <button type="button" className="secondary" onClick={() => void onExportShowfile()}>Export showfile</button>
-            <button type="button" onClick={() => importInputRef.current?.click()}>Import showfile</button>
+            <a
+              className="button secondary"
+              href={buildStageBackupUri({
+                host: window.location.hostname,
+                port: window.location.port ? Number(window.location.port) : null,
+              })}
+            >
+              Back up now
+            </a>
+            <button type="button" className="secondary" onClick={() => void onExportShowfile()}>Export show</button>
+            <button type="button" onClick={() => importInputRef.current?.click()}>Import show</button>
             <input
               ref={importInputRef}
               className="is-hidden"
               type="file"
-              accept=".json,.micwise.json"
+              accept=".micwise.zip,.zip,.json,.micwise.json"
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 if (!file) {
@@ -693,6 +742,7 @@ export function SetupView({
                   availableInputCount={Math.max(settings?.channel_count ?? 0, 0)}
                   onSave={onSaveChannel}
                   onRemove={onRemoveChannel}
+                  onUploadPhoto={onUploadPhoto}
                 />
               ))}
             </tbody>

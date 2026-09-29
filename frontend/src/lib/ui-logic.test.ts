@@ -5,8 +5,11 @@ import {
   buildEnergyLinePath,
   buildWaveformRulerMarks,
   buildExternalSyncStatusText,
+  buildStageBackupUri,
   calculateWaveformPointShift,
   computeWaveformDisplayPoints,
+  describeImportSummary,
+  getSceneChecklistFromAssignments,
   getSceneChecklistStats,
   getChannelGridNavigationTarget,
   getPointerStrokeSamplePoints,
@@ -230,5 +233,33 @@ describe('ui-logic helpers', () => {
       { position: 0.75, label: '0:30', kind: 'minor' },
       { position: 1, label: 'Live', kind: 'live' },
     ]);
+  });
+});
+
+describe('backup and checklist helpers', () => {
+  it('getSceneChecklistFromAssignments collects only ticked channels', () => {
+    expect(
+      getSceneChecklistFromAssignments([
+        { channel_id: 1, checked: true },
+        { channel_id: 2, checked: false },
+        { channel_id: 3, checked: true },
+      ]),
+    ).toEqual(new Set([1, 3]));
+    expect(getSceneChecklistFromAssignments([])).toEqual(new Set());
+    expect(getSceneChecklistFromAssignments(null)).toEqual(new Set());
+  });
+
+  it('buildStageBackupUri targets Mic-Wise with endpoint hints', () => {
+    expect(buildStageBackupUri()).toBe('stage-backup://backup?target=micwise');
+    expect(buildStageBackupUri({ host: '10.0.0.4', port: 8000, showName: 'Sunday' })).toBe(
+      'stage-backup://backup?target=micwise&host=10.0.0.4&port=8000&show=Sunday',
+    );
+  });
+
+  it('describeImportSummary mentions photos when assets travelled', () => {
+    expect(describeImportSummary({ channels: 4, scenes: 2 })).toBe('Imported 4 channels, 2 scenes');
+    expect(describeImportSummary({ channels: 4, scenes: 2, assets: 3 })).toBe(
+      'Imported 4 channels, 2 scenes, 3 photos',
+    );
   });
 });

@@ -35,10 +35,18 @@ async def lifespan(app: FastAPI):
 	discovery_service = None
 	if settings.zeroconf_enabled:
 		discovery_service = ZeroconfService(
-			service_name="Mic-Wise",
+			service_name=settings.show_name or "Mic-Wise",
 			port=settings.port,
+			properties={
+				b"app": b"micwise",
+				b"show": settings.show_name.encode("utf-8"),
+				b"showFilename": settings.show_filename.encode("utf-8"),
+			},
 		)
-		discovery_service.start()
+		try:
+			discovery_service.start()
+		except Exception:
+			discovery_service = None
 
 	app.state.settings = settings
 	app.state.database = database

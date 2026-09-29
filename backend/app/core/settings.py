@@ -63,12 +63,34 @@ class MicWiseSettings(BaseSettings):
     audio_source_mode: str = "synthetic"
     meter_window_ms: int = 100
     meter_poll_interval_ms: int = 50
-    zeroconf_enabled: bool = False
+    zeroconf_enabled: bool = True
+    photo_upload_max_bytes: int = 8 * 1024 * 1024
 
     @property
     def show_path(self) -> Path:
         """Return the SQLite show file path."""
         return self.data_directory / self.show_filename
+
+    @property
+    def show_name(self) -> str:
+        """Return the human-readable name of the active show file."""
+        return Path(self.show_filename).stem
+
+    @property
+    def assets_directory(self) -> Path:
+        """Return the directory holding locally stored show assets."""
+        return self.data_directory / "assets"
+
+    @property
+    def photos_directory(self) -> Path:
+        """Return the directory holding locally stored channel photos."""
+        return self.assets_directory / "photos"
+
+    def ensure_directories(self) -> None:
+        """Ensure the persistent and runtime backend directories exist."""
+        self.data_directory.mkdir(parents=True, exist_ok=True)
+        self.photos_directory.mkdir(parents=True, exist_ok=True)
+        self.runtime_buffer_directory.mkdir(parents=True, exist_ok=True)
 
     @property
     def runtime_buffer_directory(self) -> Path:
@@ -79,8 +101,3 @@ class MicWiseSettings(BaseSettings):
     def buffer_path(self) -> Path:
         """Return the mmap audio buffer file path."""
         return self.runtime_buffer_directory / self.buffer_filename
-
-    def ensure_directories(self) -> None:
-        """Ensure the persistent and runtime backend directories exist."""
-        self.data_directory.mkdir(parents=True, exist_ok=True)
-        self.runtime_buffer_directory.mkdir(parents=True, exist_ok=True)

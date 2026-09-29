@@ -24,3 +24,14 @@ export function deleteScene(sceneId: number): Promise<null> {
     method: 'DELETE',
   });
 }
+
+export function setSceneChannelChecked(
+  sceneId: number,
+  channelId: number,
+  checked: boolean,
+): Promise<SceneResponse> {
+  return fetchJson<SceneResponse>(`/api/scenes/${sceneId}/checklist`, {
+    method: 'POST',
+    body: JSON.stringify({ channel_id: channelId, checked }),
+  });
+}

@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
 import re
+import time
+import urllib.request
+import zipfile
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path, PurePosixPath
 
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import selectinload
@@ -15,7 +23,18 @@ from app.database.session import DatabaseManager
 DEFAULT_CHANNEL_NAME_PATTERN = re.compile(r"^Channel (\d+)$")
 SCENE_CHANNEL_STATES = {"off", "ready", "onstage"}
 SHOWFILE_FORMAT = "micwise-showfile"
-SHOWFILE_FORMAT_VERSION = 1
+SHOWFILE_FORMAT_VERSION = 2
+SHOWFILE_SUPPORTED_VERSIONS = {1, 2}
+BACKUP_FORMAT = "micwise-backup"
+BACKUP_FORMAT_VERSION = 1
+SHOWFILE_MEMBER = "micwise-showfile.micwise.json"
+BACKUP_MANIFEST_MEMBER = "backup.json"
+ASSET_MEMBER_ROOT = "assets/photos"
+PHOTO_URL_PREFIX = "/api/assets/photos/"
+REMOTE_FETCH_TIMEOUT_SEC = 2.0
+REMOTE_FETCH_BUDGET_SEC = 12.0
+REMOTE_FETCH_WORKERS = 4
+ASSET_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "avif", "bmp"}
 
 
 def default_scene_osc_address(order_index: int) -> str:
@@ -190,6 +209,19 @@ async def _ensure_show_file_compatibility(database: DatabaseManager) -> None:
                 ),
             )
 
+        scene_channel_columns = {
+            row[1]
+            for row in (
+                await connection.execute(text("PRAGMA table_info(scene_channels)"))
+            ).fetchall()
+        }
+        if scene_channel_columns and "checked" not in scene_channel_columns:
+            await connection.execute(
+                text(
+                    "ALTER TABLE scene_channels ADD COLUMN checked BOOLEAN NOT NULL DEFAULT 0",
+                ),
+            )
+
 
 async def initialise_show_file(
     database: DatabaseManager,
@@ -271,18 +303,32 @@ async def initialise_show_file(
         return settings_row
 
 
-def _normalise_scene_assignments(assignments: list[dict[str, object]] | None) -> dict[int, str]:
-    """Validate scene-channel state payloads and discard explicitly off entries."""
-    mapping: dict[int, str] = {}
+def _normalise_scene_assignments(
+    assignments: list[dict[str, object]] | None,
+    existing_checked: dict[int, bool] | None = None,
+) -> dict[int, tuple[str, bool]]:
+    """Validate scene-channel payloads and drop rows with no lasting meaning.
+
+    An entry is retained when it stages a channel (``ready``/``onstage``) or when
+    the operator has ticked it on the scene checklist. Explicitly ``off`` rows
+    with no tick are discarded so the show file does not accumulate noise.
+
+    When a payload omits ``checked`` the previous tick is preserved, so painting
+    staging states does not silently wipe mic-check progress.
+    """
+    previous = existing_checked or {}
+    mapping: dict[int, tuple[str, bool]] = {}
     for assignment in assignments or []:
         channel_id = int(assignment["channel_id"])
         state = str(assignment.get("state", "off")).strip().lower()
         if state not in SCENE_CHANNEL_STATES:
             raise ValueError(f"Unsupported scene channel state: {state}")
-        if state == "off":
+        checked_value = assignment.get("checked", None)
+        checked = previous.get(channel_id, False) if checked_value is None else bool(checked_value)
+        if state == "off" and not checked:
             mapping.pop(channel_id, None)
             continue
-        mapping[channel_id] = state
+        mapping[channel_id] = (state, checked)
     return mapping
 
 
@@ -328,10 +374,16 @@ async def _replace_scene_assignments(
     assignments: list[dict[str, object]] | None,
 ) -> None:
     """Replace all persisted per-channel states for a scene."""
-    mapping = _normalise_scene_assignments(assignments)
+    existing_rows = list(
+        (
+            await session.scalars(select(SceneChannel).where(SceneChannel.scene_id == scene.id))
+        ).all(),
+    )
+    existing_checked = {row.channel_id: row.checked for row in existing_rows}
+    mapping = _normalise_scene_assignments(assignments, existing_checked)
     await session.execute(delete(SceneChannel).where(SceneChannel.scene_id == scene.id))
-    for channel_id, state in mapping.items():
-        session.add(SceneChannel(scene_id=scene.id, channel_id=channel_id, state=state))
+    for channel_id, (state, checked) in mapping.items():
+        session.add(SceneChannel(scene_id=scene.id, channel_id=channel_id, state=state, checked=checked))
     await session.flush()
 
 
@@ -342,6 +394,39 @@ async def get_settings(database: DatabaseManager) -> SettingsRecord:
         if settings_row is None:
             raise RuntimeError("Show settings have not been initialised")
         return settings_row
+
+
+async def set_scene_channel_checked(
+    database: DatabaseManager,
+    scene_id: int,
+    channel_id: int,
+    checked: bool,
+) -> bool:
+    """Persist a scene mic-check tick without disturbing the staging state.
+
+    Returns ``False`` when the scene or channel no longer exists. Rows that end
+    up as ``off`` and unticked are removed so the show file stays clean.
+    """
+    async with database.session() as session:
+        scene = await session.get(Scene, scene_id)
+        channel = await session.get(Channel, channel_id)
+        if scene is None or channel is None:
+            return False
+
+        assignment = await session.get(SceneChannel, (scene_id, channel_id))
+        if assignment is None:
+            if not checked:
+                return True
+            session.add(
+                SceneChannel(scene_id=scene_id, channel_id=channel_id, state="off", checked=True),
+            )
+        else:
+            assignment.checked = bool(checked)
+            if assignment.state == "off" and not assignment.checked:
+                await session.delete(assignment)
+
+        await session.commit()
+        return True
 
 
 async def list_channels(database: DatabaseManager) -> list[Channel]:
@@ -499,6 +584,161 @@ async def update_settings(
         return settings_row
 
 
+def _asset_extension(name: str, content_type: str | None = None) -> str:
+    """Return a safe lowercase image extension for an asset member name."""
+    suffix = Path(name).suffix.lstrip(".").lower()
+    if suffix in ASSET_EXTENSIONS:
+        return suffix
+    guessed = (content_type or "").split("/")[-1].split(";")[0].strip().lower()
+    if guessed == "jpeg":
+        return "jpg"
+    if guessed in ASSET_EXTENSIONS:
+        return guessed
+    return "jpg"
+
+
+def _asset_member_name(content: bytes, extension: str) -> str:
+    """Return the archive member path for photo bytes."""
+    digest = hashlib.sha256(content).hexdigest()
+    return f"{ASSET_MEMBER_ROOT}/{digest}.{extension}"
+
+
+def _asset_file_name(member_name: str) -> str:
+    """Return the on-disk file name for an archive asset member."""
+    return PurePosixPath(member_name).name
+
+
+def store_photo_asset(
+    settings: MicWiseSettings,
+    content: bytes,
+    source_name: str,
+    content_type: str | None = None,
+) -> str:
+    """Persist photo bytes in the show's asset library and return its URL."""
+    if not content:
+        raise ValueError("Photo payload is empty")
+    extension = _asset_extension(source_name, content_type)
+    member_name = _asset_member_name(content, extension)
+    file_name = _asset_file_name(member_name)
+    settings.photos_directory.mkdir(parents=True, exist_ok=True)
+    (settings.photos_directory / file_name).write_bytes(content)
+    return f"{PHOTO_URL_PREFIX}{file_name}"
+
+
+def read_photo_asset(settings: MicWiseSettings, file_name: str) -> bytes | None:
+    """Read photo bytes from the show's asset library, if present."""
+    safe_name = _asset_file_name(file_name)
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", safe_name):
+        return None
+    path = settings.photos_directory / safe_name
+    if not path.is_file():
+        return None
+    return path.read_bytes()
+
+
+def _local_photo_file(settings: MicWiseSettings, photo_path: str) -> Path | None:
+    """Resolve a locally served photo URL to its file on disk."""
+    if not photo_path.startswith(PHOTO_URL_PREFIX):
+        return None
+    safe_name = _asset_file_name(photo_path[len(PHOTO_URL_PREFIX):])
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", safe_name):
+        return None
+    path = settings.photos_directory / safe_name
+    return path if path.is_file() else None
+
+
+def _fetch_remote_photo(url: str) -> tuple[bytes, str] | None:
+    """Best-effort snapshot of an externally hosted photo."""
+    max_bytes = 8 * 1024 * 1024
+    request = urllib.request.Request(url, headers={"User-Agent": "Mic-Wise/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=REMOTE_FETCH_TIMEOUT_SEC) as response:
+            content = response.read(max_bytes + 1)
+            if len(content) > max_bytes:
+                return None
+            content_type = response.headers.get("Content-Type")
+    except Exception:
+        return None
+    return content, content_type or ""
+
+
+def _snapshot_photo(
+    settings: MicWiseSettings,
+    photo_path: str | None,
+) -> tuple[str | None, bytes | None, str | None]:
+    """Return ``(member_name, bytes, original_url)`` for a channel photo.
+
+    Local assets and reachable external URLs are embedded so a restored show is
+    byte-identical. Unreachable URLs fall back to carrying the URL alone.
+    """
+    if not photo_path:
+        return None, None, None
+
+    local_file = _local_photo_file(settings, photo_path)
+    if local_file is not None:
+        content = local_file.read_bytes()
+        return _asset_member_name(content, local_file.suffix.lstrip(".").lower() or "jpg"), content, None
+
+    if photo_path.startswith(("http://", "https://")):
+        return None, None, photo_path
+
+    candidate = Path(photo_path)
+    if candidate.is_file():
+        content = candidate.read_bytes()
+        return _asset_member_name(content, _asset_extension(candidate.name)), content, None
+
+    return None, None, photo_path
+
+
+def _snapshot_remote_photos(
+    settings: MicWiseSettings,
+    snapshots: dict[str, tuple[str | None, bytes | None, str | None]],
+) -> None:
+    """Replace URL-only snapshots with embedded bytes when reachable."""
+    pending = {
+        photo_path: snapshot
+        for photo_path, snapshot in snapshots.items()
+        if snapshot[0] is None and snapshot[2] and snapshot[2].startswith(("http://", "https://"))
+    }
+    if not pending:
+        return
+
+    deadline = time.monotonic() + REMOTE_FETCH_BUDGET_SEC
+    with ThreadPoolExecutor(max_workers=REMOTE_FETCH_WORKERS) as executor:
+        futures = {
+            photo_path: executor.submit(_fetch_remote_photo, photo_path)
+            for photo_path in pending
+        }
+        for photo_path, future in futures.items():
+            if time.monotonic() >= deadline:
+                break
+            try:
+                result = future.result(timeout=max(0.1, deadline - time.monotonic()))
+            except Exception:
+                continue
+            if not result:
+                continue
+            content, content_type = result
+            member_name = _asset_member_name(content, _asset_extension(photo_path, content_type))
+            snapshots[photo_path] = (member_name, content, photo_path)
+
+
+def _apply_photo_payload(
+    settings: MicWiseSettings,
+    channel_payload: dict[str, object],
+    archive_assets: dict[str, bytes],
+) -> str | None:
+    """Materialise a channel photo from an imported payload and return its URL."""
+    member_name = _normalise_optional_text(channel_payload.get("photo_asset"))
+    if member_name and member_name in archive_assets:
+        content = archive_assets[member_name]
+        return store_photo_asset(settings, content, _asset_file_name(member_name))
+
+    photo_path = _normalise_optional_text(channel_payload.get("photo_path"))
+    photo_url = _normalise_optional_text(channel_payload.get("photo_url"))
+    return photo_path or photo_url
+
+
 def _serialise_showfile_settings(settings_row: SettingsRecord, active_scene: Scene | None) -> dict[str, object]:
     """Convert persisted settings into a portable showfile payload."""
     return {
@@ -528,33 +768,61 @@ def _serialise_showfile_settings(settings_row: SettingsRecord, active_scene: Sce
     }
 
 
-async def export_showfile(database: DatabaseManager) -> dict[str, object]:
-    """Export the current show as a portable JSON-friendly payload."""
+async def export_showfile(
+    database: DatabaseManager,
+    settings: MicWiseSettings | None = None,
+    embed_assets: bool = True,
+) -> dict[str, object]:
+    """Export the current show as a portable JSON-friendly payload.
+
+    With ``embed_assets`` the payload also carries a ``photo_asset`` reference
+    for every channel photo whose bytes could be resolved, so the show can be
+    restored byte-identically from an archive.
+    """
     settings_row = await get_settings(database)
     channels = await list_channels(database)
     scenes = await list_scenes(database)
     channel_by_id = {channel.id: channel for channel in channels}
     active_scene = next((scene for scene in scenes if scene.id == settings_row.active_scene_id), None)
 
-    return {
-        "format": SHOWFILE_FORMAT,
-        "version": SHOWFILE_FORMAT_VERSION,
-        "exported_at": settings_row.updated_at.isoformat(),
-        "settings": _serialise_showfile_settings(settings_row, active_scene),
-        "channels": [
+    snapshots: dict[str, tuple[str | None, bytes | None, str | None]] = {}
+    if embed_assets and settings is not None:
+        for channel in channels:
+            if channel.photo_path:
+                snapshots[channel.photo_path] = _snapshot_photo(settings, channel.photo_path)
+        _snapshot_remote_photos(settings, snapshots)
+
+    asset_members: dict[str, bytes] = {}
+    channels_payload: list[dict[str, object]] = []
+    for channel in channels:
+        member_name: str | None = None
+        photo_url: str | None = None
+        if channel.photo_path and channel.photo_path in snapshots:
+            member_name, content, photo_url = snapshots[channel.photo_path]
+            if member_name is not None and content is not None:
+                asset_members[member_name] = content
+        channels_payload.append(
             {
                 "number": channel.number,
                 "name": channel.name,
                 "photo_path": channel.photo_path,
+                "photo_asset": member_name,
+                "photo_url": photo_url,
                 "input_index": channel.input_index,
                 "gain_db": channel.gain_db,
                 "is_record_enabled": channel.is_record_enabled,
                 "sort_index": channel.sort_index,
                 "position_x": channel.position_x,
                 "position_y": channel.position_y,
-            }
-            for channel in channels
-        ],
+            },
+        )
+
+    return {
+        "format": SHOWFILE_FORMAT,
+        "version": SHOWFILE_FORMAT_VERSION,
+        "exported_at": settings_row.updated_at.isoformat(),
+        "settings": _serialise_showfile_settings(settings_row, active_scene),
+        "channels": channels_payload,
         "scenes": [
             {
                 "name": scene.name,
@@ -566,6 +834,7 @@ async def export_showfile(database: DatabaseManager) -> dict[str, object]:
                     {
                         "channel_number": channel_by_id[assignment.channel_id].number,
                         "state": assignment.state,
+                        "checked": assignment.checked,
                     }
                     for assignment in scene.channel_assignments
                     if assignment.channel_id in channel_by_id
@@ -573,6 +842,7 @@ async def export_showfile(database: DatabaseManager) -> dict[str, object]:
             }
             for scene in scenes
         ],
+        "_assets": asset_members,
     }
 
 
@@ -582,7 +852,7 @@ def _normalise_showfile_payload(payload: dict[str, object]) -> dict[str, object]
         raise ValueError("Unsupported Mic-Wise showfile format")
 
     version = int(payload.get("version") or 0)
-    if version != SHOWFILE_FORMAT_VERSION:
+    if version not in SHOWFILE_SUPPORTED_VERSIONS:
         raise ValueError(f"Unsupported Mic-Wise showfile version: {version}")
 
     settings_payload = payload.get("settings")
@@ -597,17 +867,30 @@ def _normalise_showfile_payload(payload: dict[str, object]) -> dict[str, object]
     if not isinstance(scenes_payload, list):
         raise ValueError("Showfile scenes payload is missing")
 
+    assets_payload = payload.get("_assets")
+    archive_assets = assets_payload if isinstance(assets_payload, dict) else {}
+
     return {
         "settings": settings_payload,
         "channels": channels_payload,
         "scenes": scenes_payload,
+        "assets": archive_assets,
     }
 
 
-async def import_showfile(database: DatabaseManager, payload: dict[str, object]) -> SettingsRecord:
+async def import_showfile(
+    database: DatabaseManager,
+    payload: dict[str, object],
+    settings: MicWiseSettings | None = None,
+) -> SettingsRecord:
     """Replace the current show contents with an imported showfile payload."""
     normalised_payload = _normalise_showfile_payload(payload)
     settings_payload = normalised_payload["settings"]
+    archive_assets: dict[str, bytes] = {
+        str(name): content
+        for name, content in normalised_payload["assets"].items()
+        if isinstance(content, (bytes, bytearray))
+    }
     channels_payload = sorted(
         normalised_payload["channels"],
         key=lambda channel: (int(channel.get("sort_index", channel.get("number", 0)) or 0), int(channel.get("number", 0) or 0)),
@@ -632,10 +915,16 @@ async def import_showfile(database: DatabaseManager, payload: dict[str, object])
         number_to_channel_id: dict[int, int] = {}
         for sort_index, channel_payload in enumerate(channels_payload):
             channel_number = int(channel_payload.get("number") or (sort_index + 1))
+            photo_path = (
+                _apply_photo_payload(settings, channel_payload, archive_assets)
+                if settings is not None
+                else _normalise_optional_text(channel_payload.get("photo_path"))
+                or _normalise_optional_text(channel_payload.get("photo_url"))
+            )
             channel = Channel(
                 number=channel_number,
                 name=str(channel_payload.get("name") or f"Channel {channel_number}").strip() or f"Channel {channel_number}",
-                photo_path=_normalise_optional_text(channel_payload.get("photo_path")),
+                photo_path=photo_path,
                 input_index=int(channel_payload["input_index"]) if channel_payload.get("input_index") is not None else None,
                 gain_db=float(channel_payload.get("gain_db") or 0.0),
                 is_record_enabled=bool(channel_payload.get("is_record_enabled", True)),
@@ -669,9 +958,19 @@ async def import_showfile(database: DatabaseManager, payload: dict[str, object])
                 channel_number = int(assignment_payload.get("channel_number") or 0)
                 channel_id = number_to_channel_id.get(channel_number)
                 state = str(assignment_payload.get("state") or "off").strip().lower()
-                if channel_id is None or state not in SCENE_CHANNEL_STATES or state == "off":
+                checked = bool(assignment_payload.get("checked", False))
+                if channel_id is None or state not in SCENE_CHANNEL_STATES:
                     continue
-                session.add(SceneChannel(scene_id=scene.id, channel_id=channel_id, state=state))
+                if state == "off" and not checked:
+                    continue
+                session.add(
+                    SceneChannel(
+                        scene_id=scene.id,
+                        channel_id=channel_id,
+                        state=state,
+                        checked=checked,
+                    ),
+                )
 
         for field_name, value in settings_payload.items():
             if field_name == "active_scene_order_index":
@@ -689,6 +988,129 @@ async def import_showfile(database: DatabaseManager, payload: dict[str, object])
         await session.commit()
         await session.refresh(settings_row)
         return settings_row
+
+
+def _build_backup_manifest(members: dict[str, dict[str, object]]) -> bytes:
+    """Serialise the archive integrity manifest."""
+    return json.dumps(
+        {
+            "format": BACKUP_FORMAT,
+            "version": BACKUP_FORMAT_VERSION,
+            "members": members,
+        },
+        indent=2,
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+async def export_show_archive(database: DatabaseManager, settings: MicWiseSettings) -> bytes:
+    """Export the show as a self-contained ``.micwise.zip`` archive.
+
+    The archive carries the portable showfile, every embedded photo asset, and
+    a SHA-256 manifest. Restoring it into any Mic-Wise session reproduces the
+    show exactly, including photos.
+    """
+    payload = await export_showfile(database, settings, embed_assets=True)
+    asset_members: dict[str, bytes] = payload.pop("_assets", {})  # type: ignore[assignment]
+
+    members: dict[str, bytes] = {
+        SHOWFILE_MEMBER: json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"),
+        **asset_members,
+    }
+
+    manifest: dict[str, dict[str, object]] = {}
+    for name, content in members.items():
+        manifest[name] = {
+            "kind": "showfile" if name == SHOWFILE_MEMBER else "asset",
+            "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+    members[BACKUP_MANIFEST_MEMBER] = _build_backup_manifest(manifest)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name in sorted(members):
+            archive.writestr(name, members[name])
+    return buffer.getvalue()
+
+
+def _valid_asset_member(name: str) -> str:
+    """Validate an archive asset member path and return it."""
+    path = PurePosixPath(name)
+    if (
+        not name
+        or "\\" in name
+        or "\x00" in name
+        or path.is_absolute()
+        or ".." in path.parts
+        or str(path) != name
+    ):
+        raise ValueError("Invalid archive member path")
+    if path.parts[0] != "assets" or len(path.parts) != 3 or path.parts[1] != "photos":
+        raise ValueError("Archive contains data outside the photo library")
+    if path.suffix.lstrip(".").lower() not in ASSET_EXTENSIONS:
+        raise ValueError("Archive contains an unsupported photo type")
+    return name
+
+
+async def import_show_archive(
+    database: DatabaseManager,
+    settings: MicWiseSettings,
+    data: bytes,
+) -> SettingsRecord:
+    """Restore a show from a ``.micwise.zip`` archive produced by the exporter.
+
+    Every member is size- and hash-verified against the manifest before any of
+    it is applied, and paths that would escape the photo library are rejected.
+    """
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as error:
+        raise ValueError("Show archive is not a valid zip file") from error
+
+    with archive:
+        names = set(archive.namelist())
+        if SHOWFILE_MEMBER not in names:
+            raise ValueError("Show archive is missing its showfile")
+        if BACKUP_MANIFEST_MEMBER not in names:
+            raise ValueError("Show archive is missing its manifest")
+
+        raw_manifest = json.loads(archive.read(BACKUP_MANIFEST_MEMBER).decode("utf-8"))
+        if str(raw_manifest.get("format") or "") != BACKUP_FORMAT:
+            raise ValueError("Unsupported Mic-Wise backup manifest format")
+        if int(raw_manifest.get("version") or 0) != BACKUP_FORMAT_VERSION:
+            raise ValueError("Unsupported Mic-Wise backup manifest version")
+        manifest = raw_manifest.get("members")
+        if not isinstance(manifest, dict):
+            raise ValueError("Show archive manifest is missing its members")
+
+        contents: dict[str, bytes] = {}
+        for name, entry in manifest.items():
+            if not isinstance(entry, dict):
+                raise ValueError("Show archive manifest entry is malformed")
+            if name == BACKUP_MANIFEST_MEMBER:
+                raise ValueError("Show archive manifest must not list itself")
+            if name != SHOWFILE_MEMBER:
+                _valid_asset_member(name)
+            if name not in names:
+                raise ValueError(f"Show archive is missing member: {name}")
+            content = archive.read(name)
+            if len(content) != int(entry.get("size") or -1):
+                raise ValueError(f"Show archive member has the wrong size: {name}")
+            if hashlib.sha256(content).hexdigest() != str(entry.get("sha256") or ""):
+                raise ValueError(f"Show archive member failed its checksum: {name}")
+            contents[name] = content
+
+        unexpected = names - set(manifest) - {BACKUP_MANIFEST_MEMBER}
+        if unexpected:
+            raise ValueError("Show archive contains unlisted members")
+
+    payload = json.loads(contents[SHOWFILE_MEMBER].decode("utf-8"))
+    asset_members = {
+        name: content for name, content in contents.items() if name != SHOWFILE_MEMBER
+    }
+    payload["_assets"] = asset_members
+    return await import_showfile(database, payload, settings)
 
 
 async def create_scene(
@@ -728,7 +1150,11 @@ async def create_scene(
         assignments = scene_changes.get("channel_assignments")
         if assignments is None and existing_scenes:
             assignments = [
-                {"channel_id": assignment.channel_id, "state": assignment.state}
+                {
+                    "channel_id": assignment.channel_id,
+                    "state": assignment.state,
+                    "checked": assignment.checked,
+                }
                 for assignment in existing_scenes[-1].channel_assignments
             ]
         await _replace_scene_assignments(session, scene, assignments)

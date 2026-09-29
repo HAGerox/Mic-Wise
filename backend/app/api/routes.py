@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from dataclasses import asdict
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse
 
 from app.api.schemas import (
 	AudioAlertResponse,
@@ -16,7 +21,9 @@ from app.api.schemas import (
 	HealthResponse,
 	MeterSnapshotResponse,
 	NetworkInterfaceResponse,
+	PhotoAssetResponse,
 	RChatTestResponse,
+	SceneChecklistUpdateRequest,
 	SceneCreateRequest,
 	SceneSyncEventRequest,
 	SceneSyncEventResponse,
@@ -33,23 +40,36 @@ from app.api.schemas import (
 from app.audio.analysis import build_channel_waveform_preview
 from app.audio.devices import list_audio_input_devices, resolve_input_device
 from app.database.repository import (
+	ASSET_EXTENSIONS,
+	SHOWFILE_MEMBER,
 	create_channel,
 	create_scene,
 	delete_channel,
 	delete_scene,
+	export_show_archive,
 	export_showfile,
 	get_channel,
 	get_channels_by_ids,
 	get_scene,
 	get_settings,
+	import_show_archive,
 	import_showfile,
 	list_channels,
 	list_scenes,
+	set_scene_channel_checked,
+	store_photo_asset,
 	update_scene,
 	update_channel,
 	update_settings,
 )
 from app.network.interfaces import list_ipv4_network_interfaces
+
+try:
+	from importlib.metadata import version as _package_version
+
+	BACKEND_VERSION = _package_version("mic-wise")
+except Exception:
+	BACKEND_VERSION = "0.0.0"
 
 router = APIRouter()
 
@@ -82,8 +102,13 @@ def _resolve_input_index(channel: ChannelResponse | object) -> int | None:
 async def healthcheck(request: Request) -> HealthResponse:
 	"""Return a minimal health report for the backend."""
 	audio_process = request.app.state.audio_process
+	settings = request.app.state.settings
 	return HealthResponse(
+		app="micwise",
 		status="ok",
+		version=BACKEND_VERSION,
+		show_name=settings.show_name,
+		show_filename=settings.show_filename,
 		audio_engine_running=audio_process.is_alive(),
 	)
 
@@ -291,6 +316,28 @@ async def delete_scene_record(scene_id: int, request: Request) -> Response:
 	return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/scenes/{scene_id}/checklist", response_model=SceneResponse)
+async def patch_scene_checklist(
+	scene_id: int,
+	payload: SceneChecklistUpdateRequest,
+	request: Request,
+) -> SceneResponse:
+	"""Persist a single scene mic-check tick without touching staging state."""
+	database = request.app.state.database
+	applied = await set_scene_channel_checked(
+		database,
+		scene_id=scene_id,
+		channel_id=payload.channel_id,
+		checked=payload.checked,
+	)
+	if not applied:
+		raise HTTPException(status_code=404, detail="Scene or channel not found")
+	scene = await get_scene(database, scene_id)
+	if scene is None:
+		raise HTTPException(status_code=404, detail="Scene not found")
+	return scene
+
+
 @router.get("/sync/status", response_model=SceneSyncStatusResponse)
 async def read_scene_sync_status(request: Request) -> SceneSyncStatusResponse:
 	"""Return runtime status for optional external scene sync listeners."""
@@ -390,26 +437,8 @@ async def create_webrtc_offer(
 	return WebRTCAnswerResponse(sdp=answer.sdp, type=answer.type)
 
 
-@router.get("/showfile/export")
-async def download_showfile(request: Request) -> Response:
-	"""Download the current show as a portable JSON showfile."""
-	database = request.app.state.database
-	payload = ShowfilePayload(**(await export_showfile(database)))
-	return Response(
-		content=payload.model_dump_json(indent=2),
-		media_type="application/json",
-		headers={
-			"Content-Disposition": 'attachment; filename="micwise-showfile.micwise.json"',
-		},
-	)
-
-
-@router.post("/showfile/import", response_model=ShowfileImportResponse)
-async def upload_showfile(payload: ShowfilePayload, request: Request) -> ShowfileImportResponse:
-	"""Replace the current show with an imported portable showfile."""
-	database = request.app.state.database
-	updated_settings = await import_showfile(database, payload.model_dump(mode="python"))
-	await request.app.state.restart_audio_runtime(updated_settings)
+def _apply_imported_show(request: Request, updated_settings: object) -> None:
+	"""Re-apply runtime services after the show file has been replaced."""
 	request.app.state.rchat_broadcaster.update_settings(
 		enabled=bool(updated_settings.rchat_enabled),
 		flash_enabled=bool(updated_settings.rchat_flash_enabled),
@@ -417,5 +446,147 @@ async def upload_showfile(payload: ShowfilePayload, request: Request) -> Showfil
 		interface_ip=updated_settings.rchat_interface_ip,
 		username=updated_settings.rchat_username,
 	)
+
+
+@router.get("/showfile/export")
+async def download_showfile(
+	request: Request,
+	format: str = Query(default="archive", pattern="^(archive|json)$"),
+) -> Response:
+	"""Download the current show as a self-contained archive or plain showfile."""
+	database = request.app.state.database
+	settings = request.app.state.settings
+
+	if format == "json":
+		payload = await export_showfile(database, settings, embed_assets=False)
+		payload.pop("_assets", None)
+		body = ShowfilePayload(**payload).model_dump_json(indent=2)
+		return Response(
+			content=body,
+			media_type="application/json",
+			headers={
+				"Content-Disposition": 'attachment; filename="micwise-showfile.micwise.json"',
+			},
+		)
+
+	archive_bytes = await export_show_archive(database, settings)
+	return Response(
+		content=archive_bytes,
+		media_type="application/zip",
+		headers={
+			"Content-Disposition": f'attachment; filename="{settings.show_name}.micwise.zip"',
+		},
+	)
+
+
+def _archive_counts(data: bytes) -> tuple[int, int, int]:
+	"""Return ``(channels, scenes, assets)`` described by a show archive."""
+	try:
+		archive = zipfile.ZipFile(io.BytesIO(data))
+	except zipfile.BadZipFile as error:
+		raise ValueError("Show archive is not a valid zip file") from error
+	with archive:
+		names = archive.namelist()
+		if SHOWFILE_MEMBER not in names:
+			raise ValueError("Show archive is missing its showfile")
+		payload = json.loads(archive.read(SHOWFILE_MEMBER).decode("utf-8"))
+		assets = [name for name in names if name.startswith("assets/photos/")]
+		return len(payload.get("channels") or []), len(payload.get("scenes") or []), len(assets)
+
+
+@router.post("/showfile/import", response_model=ShowfileImportResponse)
+async def upload_showfile(request: Request) -> ShowfileImportResponse:
+	"""Replace the current show with an imported showfile or show archive.
+
+	Accepts a JSON showfile body (legacy) or ``multipart/form-data`` carrying
+	either a ``.micwise.zip`` archive or a ``.micwise.json`` showfile.
+	"""
+	database = request.app.state.database
+	settings = request.app.state.settings
+	content_type = (request.headers.get("content-type") or "").lower()
+
+	if content_type.startswith("multipart/form-data"):
+		form = await request.form()
+		upload = next((value for value in form.values() if hasattr(value, "read")), None)
+		if upload is None:
+			raise HTTPException(status_code=400, detail="Missing show file upload")
+		data = await upload.read()
+		file_name = str(getattr(upload, "filename", "") or "").lower()
+		is_archive = file_name.endswith(".zip") or data[:2] == b"PK"
+		try:
+			if is_archive:
+				updated_settings = await import_show_archive(database, settings, data)
+				result_channels, result_scenes, result_assets = _archive_counts(data)
+				import_format = "archive"
+			else:
+				payload = json.loads(data.decode("utf-8"))
+				updated_settings = await import_showfile(database, payload, settings)
+				result_channels = len(payload.get("channels") or [])
+				result_scenes = len(payload.get("scenes") or [])
+				result_assets = 0
+				import_format = "showfile"
+		except (ValueError, UnicodeDecodeError, json.JSONDecodeError, zipfile.BadZipFile) as error:
+			raise HTTPException(status_code=400, detail=str(error)) from error
+	else:
+		try:
+			payload = ShowfilePayload(**(await request.json()))
+		except Exception as error:
+			raise HTTPException(status_code=400, detail="Show file body is not a valid showfile") from error
+		try:
+			updated_settings = await import_showfile(
+				database,
+				payload.model_dump(mode="python"),
+				settings,
+			)
+		except ValueError as error:
+			raise HTTPException(status_code=400, detail=str(error)) from error
+		result_channels = len(payload.channels)
+		result_scenes = len(payload.scenes)
+		result_assets = 0
+		import_format = "showfile"
+
+	await request.app.state.restart_audio_runtime(updated_settings)
+	_apply_imported_show(request, updated_settings)
 	await request.app.state.scene_sync_service.reload()
-	return ShowfileImportResponse(status="ok", channels=len(payload.channels), scenes=len(payload.scenes))
+	return ShowfileImportResponse(
+		status="ok",
+		channels=result_channels,
+		scenes=result_scenes,
+		assets=result_assets,
+		format=import_format,
+	)
+
+
+@router.get("/assets/photos/{file_name}")
+async def read_photo_asset_route(file_name: str, request: Request) -> FileResponse:
+	"""Serve a photo from the show's local asset library."""
+	settings = request.app.state.settings
+	safe_name = Path(file_name).name
+	if not safe_name or "/" in file_name or "\\" in file_name or ".." in file_name:
+		raise HTTPException(status_code=400, detail="Invalid photo name")
+	path = settings.photos_directory / safe_name
+	if not path.is_file():
+		raise HTTPException(status_code=404, detail="Photo not found")
+	return FileResponse(path)
+
+
+@router.post("/assets/photos", response_model=PhotoAssetResponse, status_code=status.HTTP_201_CREATED)
+async def upload_photo_asset(request: Request, file: UploadFile = File(...)) -> PhotoAssetResponse:
+	"""Store a channel photo in the show's local asset library."""
+	settings = request.app.state.settings
+	source_name = file.filename or "photo.jpg"
+	suffix = Path(source_name).suffix.lstrip(".").lower()
+	if suffix and suffix not in ASSET_EXTENSIONS:
+		raise HTTPException(status_code=400, detail="Unsupported photo type")
+
+	content = await file.read()
+	if not content:
+		raise HTTPException(status_code=400, detail="Photo payload is empty")
+	if len(content) > settings.photo_upload_max_bytes:
+		raise HTTPException(status_code=413, detail="Photo is too large")
+
+	try:
+		photo_path = store_photo_asset(settings, content, source_name, file.content_type)
+	except ValueError as error:
+		raise HTTPException(status_code=400, detail=str(error)) from error
+	return PhotoAssetResponse(photo_path=photo_path, file_name=photo_path.rsplit("/", 1)[-1])

@@ -57,6 +57,7 @@ function renderSceneSetup(onSaveSceneAssignments = vi.fn().mockResolvedValue(und
       onResetChecklist={vi.fn()}
       onExportShowfile={vi.fn().mockResolvedValue(undefined)}
       onImportShowfile={vi.fn().mockResolvedValue(undefined)}
+      onUploadPhoto={vi.fn().mockResolvedValue({ photo_path: '/api/assets/photos/a.png', file_name: 'a.png' })}
       onTestRChat={vi.fn().mockResolvedValue(undefined)}
     />,
   );

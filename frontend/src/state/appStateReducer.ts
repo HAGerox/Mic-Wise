@@ -47,6 +47,7 @@ export type AppStateAction =
         desiredState?: boolean | null;
       };
     }
+  | { type: 'hydrateSceneChecklists'; payload: SceneChecklistById }
   | { type: 'resetAllSceneChecklists' }
   | { type: 'reconcileChannelIds'; payload: number[] };
 
@@ -169,6 +170,9 @@ export function appStateReducer(state: AppState, action: AppStateAction): AppSta
       nextChecklistMap.set(sceneId, checklist);
       return { ...state, sceneChecklistById: nextChecklistMap };
     }
+
+    case 'hydrateSceneChecklists':
+      return { ...state, sceneChecklistById: cloneChecklistMap(action.payload) };
 
     case 'resetAllSceneChecklists':
       return { ...state, sceneChecklistById: new Map<number, Set<number>>() };

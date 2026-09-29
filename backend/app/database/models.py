@@ -103,6 +103,7 @@ class SceneChannel(Base):
     scene_id: Mapped[int] = mapped_column(ForeignKey("scenes.id"), primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), primary_key=True)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="off")
+    checked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     scene: Mapped[Scene] = relationship(back_populates="channel_assignments")
     channel: Mapped[Channel] = relationship(back_populates="scene_assignments")

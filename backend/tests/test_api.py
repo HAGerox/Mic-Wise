@@ -352,17 +352,22 @@ def test_showfile_export_and_import_routes_round_trip(tmp_path, monkeypatch) -> 
 			"/api/scenes",
 			json={
 				"name": "Dress Rehearsal",
-				"channel_assignments": [{"channel_id": 1, "state": "onstage"}],
+				"channel_assignments": [{"channel_id": 1, "state": "onstage", "checked": True}],
 			},
 		)
 		assert created_scene.status_code == 201
 
-		exported = client.get("/api/showfile/export")
+		exported = client.get("/api/showfile/export?format=json")
 		assert exported.status_code == 200
 		payload = exported.json()
 		assert payload["format"] == "micwise-showfile"
+		assert payload["version"] == 2
 		assert payload["settings"]["audio_source_mode"] == "synthetic"
 		assert payload["channels"][0]["name"] == "Lead Mic"
+		dress_rehearsal = next(scene for scene in payload["scenes"] if scene["name"] == "Dress Rehearsal")
+		assert dress_rehearsal["channel_assignments"] == [
+			{"channel_number": 1, "state": "onstage", "checked": True},
+		]
 
 		payload["settings"]["master_gain_db"] = 5.0
 		payload["settings"]["alert_popup_duration_sec"] = 9
@@ -372,7 +377,13 @@ def test_showfile_export_and_import_routes_round_trip(tmp_path, monkeypatch) -> 
 
 		imported = client.post("/api/showfile/import", json=payload)
 		assert imported.status_code == 200
-		assert imported.json() == {"status": "ok", "channels": 4, "scenes": 2}
+		assert imported.json() == {
+			"status": "ok",
+			"channels": 4,
+			"scenes": 2,
+			"assets": 0,
+			"format": "showfile",
+		}
 
 		settings = client.get("/api/settings")
 		assert settings.status_code == 200
@@ -387,3 +398,154 @@ def test_showfile_export_and_import_routes_round_trip(tmp_path, monkeypatch) -> 
 		scenes = client.get("/api/scenes")
 		assert scenes.status_code == 200
 		assert scenes.json()[0]["name"] == "Imported Scene 1"
+		restored = next(scene for scene in scenes.json() if scene["name"] == "Dress Rehearsal")
+		assert restored["channel_assignments"] == [
+			{"channel_id": 1, "state": "onstage", "checked": True},
+		]
+
+
+def test_show_archive_round_trip_restores_photos_and_checklists(tmp_path, monkeypatch) -> None:
+	import io
+	import json
+	import zipfile
+
+	configure_test_environment(monkeypatch, tmp_path)
+	with TestClient(create_app()) as client:
+		png = b"\x89PNG\r\n\x1a\n" + b"fake-image-bytes"
+		upload = client.post(
+			"/api/assets/photos",
+			files={"file": ("performer.png", png, "image/png")},
+		)
+		assert upload.status_code == 201
+		photo_path = upload.json()["photo_path"]
+		assert photo_path.startswith("/api/assets/photos/")
+
+		assert client.patch("/api/channels/1", json={"name": "Lead", "photo_path": photo_path}).status_code == 200
+		assert client.post(
+			"/api/scenes",
+			json={
+				"name": "Act 2",
+				"channel_assignments": [
+					{"channel_id": 1, "state": "onstage", "checked": True},
+					{"channel_id": 2, "state": "off", "checked": True},
+				],
+			},
+		).status_code == 201
+
+		exported = client.get("/api/showfile/export")
+		assert exported.status_code == 200
+		assert exported.headers["content-type"] == "application/zip"
+		archive_bytes = exported.content
+
+		with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+			names = set(archive.namelist())
+			assert "micwise-showfile.micwise.json" in names
+			assert "backup.json" in names
+			photo_members = [name for name in names if name.startswith("assets/photos/")]
+			assert len(photo_members) == 1
+			assert archive.read(photo_members[0]) == png
+			manifest = json.loads(archive.read("backup.json"))
+			assert manifest["format"] == "micwise-backup"
+			assert set(manifest["members"]) == {
+				"micwise-showfile.micwise.json",
+				*photo_members,
+			}
+
+		assert client.patch("/api/channels/1", json={"name": "Wiped", "photo_path": None}).status_code == 200
+
+		imported = client.post(
+			"/api/showfile/import",
+			files={"file": ("show.micwise.zip", archive_bytes, "application/zip")},
+		)
+		assert imported.status_code == 200
+		assert imported.json()["format"] == "archive"
+		assert imported.json()["assets"] == 1
+
+		channels = client.get("/api/channels")
+		assert channels.status_code == 200
+		assert channels.json()[0]["name"] == "Lead"
+		assert channels.json()[0]["photo_path"] == photo_path
+
+		served = client.get(photo_path)
+		assert served.status_code == 200
+		assert served.content == png
+
+		scenes = client.get("/api/scenes")
+		assert scenes.status_code == 200
+		act_two = next(scene for scene in scenes.json() if scene["name"] == "Act 2")
+		assignments = {assignment["channel_id"]: assignment for assignment in act_two["channel_assignments"]}
+		assert assignments[1]["state"] == "onstage"
+		assert assignments[1]["checked"] is True
+		assert assignments[2]["state"] == "off"
+		assert assignments[2]["checked"] is True
+
+
+def test_show_archive_rejects_tampered_members(tmp_path, monkeypatch) -> None:
+	import hashlib
+	import io
+	import json
+	import zipfile
+
+	configure_test_environment(monkeypatch, tmp_path)
+	with TestClient(create_app()) as client:
+		exported = client.get("/api/showfile/export")
+		assert exported.status_code == 200
+
+		with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+			members = {name: archive.read(name) for name in archive.namelist()}
+
+		members["micwise-showfile.micwise.json"] = b'{"format":"micwise-showfile","version":2}'
+		manifest = json.loads(members["backup.json"])
+		manifest["members"]["micwise-showfile.micwise.json"]["size"] = len(
+			members["micwise-showfile.micwise.json"],
+		)
+		manifest["members"]["micwise-showfile.micwise.json"]["sha256"] = hashlib.sha256(
+			members["micwise-showfile.micwise.json"],
+		).hexdigest()
+		manifest["members"]["../../escape.png"] = {"kind": "asset", "size": 1, "sha256": "00"}
+		members["backup.json"] = json.dumps(manifest).encode("utf-8")
+
+		buffer = io.BytesIO()
+		with zipfile.ZipFile(buffer, "w") as archive:
+			for name, content in members.items():
+				archive.writestr(name, content)
+
+		imported = client.post(
+			"/api/showfile/import",
+			files={"file": ("tampered.micwise.zip", buffer.getvalue(), "application/zip")},
+		)
+		assert imported.status_code == 400
+		assert "member path" in imported.json()["detail"] or "photo library" in imported.json()["detail"]
+
+
+def test_scene_checklist_route_persists_ticks(tmp_path, monkeypatch) -> None:
+	configure_test_environment(monkeypatch, tmp_path)
+	with TestClient(create_app()) as client:
+		assert client.post(
+			"/api/scenes/1/checklist",
+			json={"channel_id": 2, "checked": True},
+		).status_code == 200
+
+		scenes = client.get("/api/scenes")
+		assert scenes.status_code == 200
+		assignments = scenes.json()[0]["channel_assignments"]
+		assert [(a["channel_id"], a["state"], a["checked"]) for a in assignments] == [(2, "off", True)]
+
+		assert client.post(
+			"/api/scenes/1/checklist",
+			json={"channel_id": 2, "checked": False},
+		).status_code == 200
+		scenes_after = client.get("/api/scenes")
+		assert scenes_after.json()[0]["channel_assignments"] == []
+
+
+def test_photo_asset_route_rejects_bad_names(tmp_path, monkeypatch) -> None:
+	configure_test_environment(monkeypatch, tmp_path)
+	with TestClient(create_app()) as client:
+		assert client.get("/api/assets/photos/..%2Fsecrets").status_code in (400, 404)
+		assert client.get("/api/assets/photos/missing.png").status_code == 404
+		bad = client.post(
+			"/api/assets/photos",
+			files={"file": ("evil.svg", b"<svg/>", "image/svg+xml")},
+		)
+		assert bad.status_code == 400

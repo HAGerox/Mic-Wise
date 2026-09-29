@@ -3,10 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { listActiveAlerts } from './api/alerts';
+import { uploadPhotoAsset } from './api/assets';
 import { getLatestMeters } from './api/meters';
-import { downloadShowfile, importShowfile } from './api/showfile';
+import { downloadShowfile, importShowFile, importShowfile } from './api/showfile';
 import { createChannel, deleteChannel, listChannels, updateChannel } from './api/channels';
-import { createScene, deleteScene, listScenes, updateScene } from './api/scenes';
+import { createScene, deleteScene, listScenes, setSceneChannelChecked, updateScene } from './api/scenes';
 import {
   getHealth,
   getSettings,
@@ -26,6 +27,8 @@ import { useMeters } from './hooks/useMeters';
 import { useWaveform } from './hooks/useWaveform';
 import { clampGainDb, sortChannels, sortScenes } from './lib/format';
 import {
+  describeImportSummary,
+  getSceneChecklistFromAssignments,
   getSceneChecklistStats,
   getChannelGridNavigationTarget,
   getChannelSelectionAfterInteraction,
@@ -38,11 +41,13 @@ import type {
   ChannelResponse,
   ChannelUpdateRequest,
   AudioAlertResponse,
+  PhotoAssetResponse,
   SceneChannelAssignmentRequest,
   SceneResponse,
   SceneUpdateRequest,
   SettingsResponse,
   SettingsUpdateRequest,
+  ShowfileImportResponse,
   ShowfilePayload,
 } from './types/api';
 import type { ActiveView, AudioInputSource, ChannelSelectionModifiers } from './types/ui';
@@ -132,6 +137,7 @@ function AppContent(): JSX.Element {
   const undoStackRef = useRef<UndoEntry[]>([]);
   const undoIdRef = useRef(0);
   const undoRunningRef = useRef(false);
+  const checklistSignatureRef = useRef('');
   const [toastAlerts, setToastAlerts] = useState<AudioAlertResponse[]>([]);
 
   const healthQuery = useQuery({
@@ -215,6 +221,23 @@ function AppContent(): JSX.Element {
     () => getSceneChecklistStats(activeScene, sceneChecklist),
     [activeScene, sceneChecklist],
   );
+
+  useEffect(() => {
+    const signature = scenes
+      .map((scene) => `${scene.id}:${scene.channel_assignments
+        .map((assignment) => `${assignment.channel_id}-${assignment.checked ? 1 : 0}`)
+        .join(',')}`)
+      .join('|');
+    if (signature === checklistSignatureRef.current) {
+      return;
+    }
+    checklistSignatureRef.current = signature;
+    const payload = new Map<number, Set<number>>();
+    for (const scene of scenes) {
+      payload.set(scene.id, getSceneChecklistFromAssignments(scene.channel_assignments));
+    }
+    dispatch({ type: 'hydrateSceneChecklists', payload });
+  }, [dispatch, scenes]);
   const modalChannel = useMemo(
     () => channels.find((channel) => channel.id === state.modalChannelId) ?? null,
     [channels, state.modalChannelId],
@@ -549,6 +572,13 @@ function AppContent(): JSX.Element {
     await syncListening([state.modalChannelId], replaySeconds);
   }, [dispatch, state.modalChannelId, syncListening]);
 
+  const writeSceneToCache = useCallback((updatedScene: SceneResponse): void => {
+    queryClient.setQueryData<SceneResponse[]>(
+      ['scenes'],
+      (current = []) => current.map((scene) => (scene.id === updatedScene.id ? updatedScene : scene)),
+    );
+  }, [queryClient]);
+
   const handleToggleChecklist = useCallback((channelId: number, desiredState?: boolean | null): void => {
     if (!activeScene) {
       return;
@@ -557,15 +587,28 @@ function AppContent(): JSX.Element {
       return;
     }
 
+    const currentlyChecked = sceneChecklist.has(channelId);
+    const nextChecked = desiredState == null ? !currentlyChecked : desiredState === true;
+    if (nextChecked === currentlyChecked) {
+      return;
+    }
+
+    const sceneId = activeScene.id;
     dispatch({
       type: 'toggleSceneChecklist',
-      payload: {
-        sceneId: activeScene.id,
-        channelId,
-        desiredState,
-      },
+      payload: { sceneId, channelId, desiredState: nextChecked },
     });
-  }, [activeScene, dispatch]);
+    void setSceneChannelChecked(sceneId, channelId, nextChecked)
+      .then(writeSceneToCache)
+      .catch((error) => {
+        console.error('Unable to save scene check', error);
+        dispatch({
+          type: 'toggleSceneChecklist',
+          payload: { sceneId, channelId, desiredState: !nextChecked },
+        });
+        setStatusText('Scene check update failed');
+      });
+  }, [activeScene, dispatch, sceneChecklist, setStatusText, writeSceneToCache]);
 
   useEffect(() => {
     const handleGlobalKeydown = (event: KeyboardEvent): void => {
@@ -833,42 +876,68 @@ function AppContent(): JSX.Element {
   const handleResetAllChecklists = useCallback((): void => {
     dispatch({ type: 'resetAllSceneChecklists' });
     setStatusText('Scene checks reset');
-  }, [dispatch, setStatusText]);
+
+    void (async (): Promise<void> => {
+      for (const scene of scenes) {
+        for (const assignment of scene.channel_assignments) {
+          if (!assignment.checked) {
+            continue;
+          }
+          try {
+            const updatedScene = await setSceneChannelChecked(scene.id, assignment.channel_id, false);
+            writeSceneToCache(updatedScene);
+          } catch (error) {
+            console.error('Unable to clear scene check', error);
+          }
+        }
+      }
+    })();
+  }, [dispatch, scenes, setStatusText, writeSceneToCache]);
+
+  const applyImportedShow = useCallback(async (summary: ShowfileImportResponse, label: string): Promise<void> => {
+    clearUndoHistory();
+    checklistSignatureRef.current = '';
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['settings'] }),
+      queryClient.invalidateQueries({ queryKey: ['channels'] }),
+      queryClient.invalidateQueries({ queryKey: ['scenes'] }),
+      queryClient.invalidateQueries({ queryKey: ['syncStatus'] }),
+      queryClient.invalidateQueries({ queryKey: ['audioDevices'] }),
+      queryClient.invalidateQueries({ queryKey: ['activeAlerts'] }),
+      queryClient.invalidateQueries({ queryKey: ['health'] }),
+    ]);
+    setStatusText(`${describeImportSummary(summary)} from ${label}`);
+  }, [clearUndoHistory, queryClient, setStatusText]);
 
   const handleExportShowfile = useCallback(async (): Promise<void> => {
     try {
-      await downloadShowfile();
-      setStatusText('Showfile exported');
+      await downloadShowfile('archive');
+      setStatusText('Show archive exported');
     } catch (error) {
-      console.error('Unable to export showfile', error);
-      setStatusText('Showfile export failed');
+      console.error('Unable to export show', error);
+      setStatusText('Show export failed');
     }
   }, [setStatusText]);
 
   const handleImportShowfile = useCallback(async (file: File): Promise<void> => {
     try {
-      const payload = JSON.parse(await file.text()) as ShowfilePayload;
       dispatch({ type: 'clearSelection' });
       await syncListening([], 0);
-      await importShowfile(payload);
-
-      clearUndoHistory();
-      dispatch({ type: 'resetAllSceneChecklists' });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['settings'] }),
-        queryClient.invalidateQueries({ queryKey: ['channels'] }),
-        queryClient.invalidateQueries({ queryKey: ['scenes'] }),
-        queryClient.invalidateQueries({ queryKey: ['syncStatus'] }),
-        queryClient.invalidateQueries({ queryKey: ['audioDevices'] }),
-        queryClient.invalidateQueries({ queryKey: ['activeAlerts'] }),
-      ]);
-
-      setStatusText(`Imported ${file.name}`);
+      const summary = file.name.toLowerCase().endsWith('.json')
+        ? await importShowfile(JSON.parse(await file.text()) as ShowfilePayload)
+        : await importShowFile(file);
+      await applyImportedShow(summary, file.name);
     } catch (error) {
-      console.error('Unable to import showfile', error);
-      setStatusText('Showfile import failed');
+      console.error('Unable to import show', error);
+      setStatusText('Show import failed');
     }
-  }, [clearUndoHistory, dispatch, queryClient, setStatusText, syncListening]);
+  }, [applyImportedShow, dispatch, setStatusText, syncListening]);
+
+  const handleUploadPhoto = useCallback(async (file: File): Promise<PhotoAssetResponse> => {
+    const asset = await uploadPhotoAsset(file);
+    await queryClient.invalidateQueries({ queryKey: ['channels'] });
+    return asset;
+  }, [queryClient]);
 
   const handleTestRChat = useCallback(async (): Promise<void> => {
     try {
@@ -976,6 +1045,7 @@ function AppContent(): JSX.Element {
         onResetChecklist={handleResetAllChecklists}
         onExportShowfile={handleExportShowfile}
         onImportShowfile={handleImportShowfile}
+        onUploadPhoto={handleUploadPhoto}
         onTestRChat={handleTestRChat}
       />
 
