@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import multiprocessing as mp
 import sys
@@ -47,7 +48,9 @@ async def lifespan(app: FastAPI):
 			},
 		)
 		try:
-			discovery_service.start()
+			# Zeroconf's synchronous API owns its own loop. Creating it on the
+			# FastAPI loop can deadlock registration and delay startup/shutdown.
+			await asyncio.to_thread(discovery_service.start)
 		except Exception as exc:
 			logging.getLogger(__name__).warning("Discovery unavailable: %s", exc)
 			discovery_service = None
@@ -82,7 +85,7 @@ async def lifespan(app: FastAPI):
 		await rchat_broadcaster.close()
 		await stop_audio_runtime(getattr(app.state, "audio_runtime", None))
 		if discovery_service is not None:
-			discovery_service.stop()
+			await asyncio.to_thread(discovery_service.stop)
 		await database.dispose()
 
 

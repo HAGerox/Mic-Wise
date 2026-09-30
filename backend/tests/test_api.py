@@ -51,6 +51,35 @@ def test_api_health_and_static_frontend(tmp_path, monkeypatch) -> None:
 		assert "Mic-Wise" in frontend.text
 
 
+def test_discovery_does_not_attach_to_api_event_loop(tmp_path, monkeypatch) -> None:
+	"""Synchronous Zeroconf must own a separate loop, including on shutdown."""
+	import asyncio
+	import pytest
+
+	configure_test_environment(monkeypatch, tmp_path)
+	monkeypatch.setenv("MICWISE_ZEROCONF_ENABLED", "true")
+	calls = []
+
+	class Discovery:
+		def __init__(self, **kwargs):
+			pass
+
+		def start(self):
+			with pytest.raises(RuntimeError, match="no running event loop"):
+				asyncio.get_running_loop()
+			calls.append("start")
+
+		def stop(self):
+			with pytest.raises(RuntimeError, match="no running event loop"):
+				asyncio.get_running_loop()
+			calls.append("stop")
+
+	monkeypatch.setattr("app.main.ZeroconfService", Discovery)
+	with TestClient(create_app()) as client:
+		assert client.get("/api/health").status_code == 200
+	assert calls == ["start", "stop"]
+
+
 def test_settings_and_waveform_routes(tmp_path, monkeypatch) -> None:
 	configure_test_environment(monkeypatch, tmp_path)
 	with TestClient(create_app()) as client:

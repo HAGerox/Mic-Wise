@@ -184,7 +184,7 @@ start() {
 	prepare
 
 	start_process "backend" "$BACKEND_PID_FILE" "$BACKEND_LOG" \
-		"$PYTHON_BIN" -m uvicorn app.main:app --app-dir backend --reload --host "$HOST" --port "$PORT"
+		"$PYTHON_BIN" -m uvicorn app.main:app --app-dir backend --reload --reload-dir backend/app --host "$HOST" --port "$PORT"
 	start_process "frontend" "$FRONTEND_PID_FILE" "$FRONTEND_LOG" \
 		npm --prefix frontend run dev -- --host "$VITE_HOST" --port "$VITE_PORT"
 
