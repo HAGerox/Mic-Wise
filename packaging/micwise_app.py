@@ -43,6 +43,11 @@ def _has_console() -> bool:
         return False
 
 
+def _start_browser_when_ready(host: str, port: int) -> None:
+    if os.environ.get("MICWISE_NO_BROWSER", "").strip().lower() not in {"1", "true", "yes"}:
+        threading.Thread(target=_wait_and_open_browser, args=(host, port), daemon=True).start()
+
+
 def _redirect_output_to_log_file(data_directory) -> None:
     data_directory.mkdir(parents=True, exist_ok=True)
     path = data_directory / "micwise-server.log"
@@ -112,6 +117,7 @@ def _run_macos_app(server, listener, url: str) -> None:
     class MicWiseAppDelegate(AppKit.NSObject):
         def applicationDidFinishLaunching_(self, notification):
             server_thread.start()
+            _start_browser_when_ready(server.config.host, server.config.port)
             self.timer = Foundation.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
                 0.5, self, "checkServer:", None, True,
             )
@@ -191,12 +197,11 @@ def main() -> None:
         except SystemExit as exc:
             raise RuntimeError(f"Port {settings.port} is in use. Quit the other server and reopen Mic-Wise.") from exc
         server = uvicorn.Server(config)
-        if os.environ.get("MICWISE_NO_BROWSER", "").strip().lower() not in {"1", "true", "yes"}:
-            threading.Thread(target=_wait_and_open_browser, args=(settings.host, settings.port), daemon=True).start()
         print(f"Show data directory: {settings.data_directory}")
         if sys.platform == "darwin" and not has_console:
             _run_macos_app(server, listener, _ui_url(settings.host, settings.port))
         else:
+            _start_browser_when_ready(settings.host, settings.port)
             server.run(sockets=[listener])
     except Exception as exc:
         _show_error(str(exc))
