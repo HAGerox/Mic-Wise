@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
@@ -12,7 +13,7 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.core.settings import MicWiseSettings
@@ -24,7 +25,6 @@ DEFAULT_CHANNEL_NAME_PATTERN = re.compile(r"^Channel (\d+)$")
 SCENE_CHANNEL_STATES = {"off", "ready", "onstage"}
 SHOWFILE_FORMAT = "micwise-showfile"
 SHOWFILE_FORMAT_VERSION = 2
-SHOWFILE_SUPPORTED_VERSIONS = {1, 2}
 BACKUP_FORMAT = "micwise-backup"
 BACKUP_FORMAT_VERSION = 1
 SHOWFILE_MEMBER = "micwise-showfile.micwise.json"
@@ -50,186 +50,12 @@ def _normalise_optional_text(value: object | None) -> str | None:
     return text_value or None
 
 
-async def _ensure_show_file_compatibility(database: DatabaseManager) -> None:
-    """Add newly introduced columns to existing show files."""
-
-    async with database.engine.begin() as connection:
-        settings_columns = {
-            row[1]
-            for row in (
-                await connection.execute(text("PRAGMA table_info(settings)"))
-            ).fetchall()
-        }
-        if settings_columns and "master_gain_db" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN master_gain_db FLOAT NOT NULL DEFAULT 0.0",
-                ),
-            )
-        if settings_columns and "scene_mode_enabled" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN scene_mode_enabled BOOLEAN NOT NULL DEFAULT 0",
-                ),
-            )
-        if settings_columns and "active_scene_id" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN active_scene_id INTEGER",
-                ),
-            )
-        if settings_columns and "external_sync_enabled" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN external_sync_enabled BOOLEAN NOT NULL DEFAULT 0",
-                ),
-            )
-        if settings_columns and "external_sync_transport" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN external_sync_transport VARCHAR(16) NOT NULL DEFAULT 'off'",
-                ),
-            )
-        if settings_columns and "external_sync_osc_host" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN external_sync_osc_host VARCHAR(128) NOT NULL DEFAULT '0.0.0.0'",
-                ),
-            )
-        if settings_columns and "external_sync_osc_port" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN external_sync_osc_port INTEGER NOT NULL DEFAULT 53001",
-                ),
-            )
-        if settings_columns and "external_sync_midi_input_name" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN external_sync_midi_input_name VARCHAR(128)",
-                ),
-            )
-        if settings_columns and "scene_osc_defaults_seeded" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN scene_osc_defaults_seeded BOOLEAN NOT NULL DEFAULT 0",
-                ),
-            )
-        if settings_columns and "audio_input_device" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN audio_input_device VARCHAR(255)",
-                ),
-            )
-        if settings_columns and "alerts_enabled" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN alerts_enabled BOOLEAN NOT NULL DEFAULT 1",
-                ),
-            )
-        if settings_columns and "alert_popup_duration_sec" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN alert_popup_duration_sec INTEGER NOT NULL DEFAULT 6",
-                ),
-            )
-        if settings_columns and "rchat_enabled" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN rchat_enabled BOOLEAN NOT NULL DEFAULT 0",
-                ),
-            )
-            if "radioworld_enabled" in settings_columns:
-                await connection.execute(text("UPDATE settings SET rchat_enabled = radioworld_enabled"))
-        if settings_columns and "rchat_flash_enabled" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN rchat_flash_enabled BOOLEAN NOT NULL DEFAULT 0",
-                ),
-            )
-            if "radioworld_flash_enabled" in settings_columns:
-                await connection.execute(text("UPDATE settings SET rchat_flash_enabled = radioworld_flash_enabled"))
-        if settings_columns and "rchat_hold_seconds" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN rchat_hold_seconds INTEGER NOT NULL DEFAULT 8",
-                ),
-            )
-            if "radioworld_hold_seconds" in settings_columns:
-                await connection.execute(text("UPDATE settings SET rchat_hold_seconds = radioworld_hold_seconds"))
-        if settings_columns and "rchat_interface_ip" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN rchat_interface_ip VARCHAR(45)",
-                ),
-            )
-            if "radioworld_interface_ip" in settings_columns:
-                await connection.execute(text("UPDATE settings SET rchat_interface_ip = radioworld_interface_ip"))
-        if settings_columns and "rchat_username" not in settings_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE settings ADD COLUMN rchat_username VARCHAR(128) NOT NULL DEFAULT 'Mic-Wise'",
-                ),
-            )
-
-        channel_columns = {
-            row[1]
-            for row in (
-                await connection.execute(text("PRAGMA table_info(channels)"))
-            ).fetchall()
-        }
-        if channel_columns and "gain_db" not in channel_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE channels ADD COLUMN gain_db FLOAT NOT NULL DEFAULT 0.0",
-                ),
-            )
-
-        scene_columns = {
-            row[1]
-            for row in (
-                await connection.execute(text("PRAGMA table_info(scenes)"))
-            ).fetchall()
-        }
-        if scene_columns and "sync_osc_address" not in scene_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE scenes ADD COLUMN sync_osc_address VARCHAR(255)",
-                ),
-            )
-        if scene_columns and "sync_osc_argument" not in scene_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE scenes ADD COLUMN sync_osc_argument VARCHAR(255)",
-                ),
-            )
-        if scene_columns and "sync_midi_pattern" not in scene_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE scenes ADD COLUMN sync_midi_pattern VARCHAR(255)",
-                ),
-            )
-
-        scene_channel_columns = {
-            row[1]
-            for row in (
-                await connection.execute(text("PRAGMA table_info(scene_channels)"))
-            ).fetchall()
-        }
-        if scene_channel_columns and "checked" not in scene_channel_columns:
-            await connection.execute(
-                text(
-                    "ALTER TABLE scene_channels ADD COLUMN checked BOOLEAN NOT NULL DEFAULT 0",
-                ),
-            )
-
-
 async def initialise_show_file(
     database: DatabaseManager,
     settings: MicWiseSettings,
 ) -> SettingsRecord:
     """Create default settings, channels, and a starter scene if absent."""
     await database.create_schema()
-    await _ensure_show_file_compatibility(database)
 
     async with database.session() as session:
         settings_row = await session.get(SettingsRecord, 1)
@@ -291,12 +117,6 @@ async def initialise_show_file(
             existing_scenes = [starter_scene]
             if settings_row.active_scene_id is None:
                 settings_row.active_scene_id = starter_scene.id
-
-        if not settings_row.scene_osc_defaults_seeded:
-            for scene in existing_scenes:
-                if scene.sync_osc_address is None:
-                    scene.sync_osc_address = default_scene_osc_address(scene.order_index)
-            settings_row.scene_osc_defaults_seeded = True
 
         await session.commit()
         await session.refresh(settings_row)
@@ -789,8 +609,8 @@ async def export_showfile(
     if embed_assets and settings is not None:
         for channel in channels:
             if channel.photo_path:
-                snapshots[channel.photo_path] = _snapshot_photo(settings, channel.photo_path)
-        _snapshot_remote_photos(settings, snapshots)
+                snapshots[channel.photo_path] = await asyncio.to_thread(_snapshot_photo, settings, channel.photo_path)
+        await asyncio.to_thread(_snapshot_remote_photos, settings, snapshots)
 
     asset_members: dict[str, bytes] = {}
     channels_payload: list[dict[str, object]] = []
@@ -852,7 +672,7 @@ def _normalise_showfile_payload(payload: dict[str, object]) -> dict[str, object]
         raise ValueError("Unsupported Mic-Wise showfile format")
 
     version = int(payload.get("version") or 0)
-    if version not in SHOWFILE_SUPPORTED_VERSIONS:
+    if version != SHOWFILE_FORMAT_VERSION:
         raise ValueError(f"Unsupported Mic-Wise showfile version: {version}")
 
     settings_payload = payload.get("settings")
@@ -1027,6 +847,11 @@ async def export_show_archive(database: DatabaseManager, settings: MicWiseSettin
         }
     members[BACKUP_MANIFEST_MEMBER] = _build_backup_manifest(manifest)
 
+    return await asyncio.to_thread(_compress_archive_members, members)
+
+
+def _compress_archive_members(members: dict[str, bytes]) -> bytes:
+    """Compress photos outside the meter/WebSocket event loop."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name in sorted(members):

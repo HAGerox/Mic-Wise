@@ -46,7 +46,7 @@ class MicWiseSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="MICWISE_",
-        env_file=".env",
+        env_file=None if is_frozen_app() else ".env",
         extra="ignore",
     )
 

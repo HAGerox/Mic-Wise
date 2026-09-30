@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sqlite3
 
 from app.core.settings import MicWiseSettings
 from app.database.repository import (
@@ -142,93 +141,21 @@ def test_initialise_show_file_preserves_deleted_channels(tmp_path) -> None:
     asyncio.run(scenario())
 
 
-def test_initialise_show_file_seeds_legacy_scene_osc_defaults_once(tmp_path) -> None:
-    settings = MicWiseSettings(
-        data_directory=tmp_path,
-        show_filename="legacy_osc_show.micwise",
-        buffer_filename="legacy_osc_audio.buffer",
-        default_sample_rate=48_000,
-        default_channel_count=2,
-        default_buffer_duration_sec=300,
-        default_block_size=480,
-    )
-    settings.ensure_directories()
+def test_initialise_show_file_preserves_cleared_scene_cue(tmp_path) -> None:
+    settings = MicWiseSettings(data_directory=tmp_path)
 
-    async def seed_current_schema() -> None:
-        database = DatabaseManager(settings.show_path)
-        try:
-            await initialise_show_file(database, settings)
-        finally:
-            await database.dispose()
-
-    asyncio.run(seed_current_schema())
-
-    with sqlite3.connect(settings.show_path) as connection:
-        connection.execute("UPDATE scenes SET sync_osc_address = NULL")
-        connection.execute("UPDATE settings SET scene_osc_defaults_seeded = 0")
-
-    async def migrate_and_preserve_later_clear() -> None:
+    async def scenario() -> None:
         database = DatabaseManager(settings.show_path)
         try:
             await initialise_show_file(database, settings)
             scenes = await list_scenes(database)
-            assert scenes[0].sync_osc_address == "/micwise/scene/1"
-
             await update_scene(database, scenes[0].id, {"sync_osc_address": None})
             await initialise_show_file(database, settings)
-            scenes_after_clear = await list_scenes(database)
-            assert scenes_after_clear[0].sync_osc_address is None
+            assert (await list_scenes(database))[0].sync_osc_address is None
         finally:
             await database.dispose()
 
-    asyncio.run(migrate_and_preserve_later_clear())
-
-
-def test_initialise_show_file_migrates_radioworld_settings_to_rchat(tmp_path) -> None:
-    settings = MicWiseSettings(
-        data_directory=tmp_path,
-        show_filename="legacy_show.micwise",
-        buffer_filename="legacy_audio.buffer",
-        default_sample_rate=48_000,
-        default_channel_count=4,
-        default_buffer_duration_sec=300,
-        default_block_size=480,
-    )
-    settings.ensure_directories()
-
-    async def seed_current_schema() -> None:
-        database = DatabaseManager(settings.show_path)
-        try:
-            await initialise_show_file(database, settings)
-        finally:
-            await database.dispose()
-
-    asyncio.run(seed_current_schema())
-
-    with sqlite3.connect(settings.show_path) as connection:
-        connection.execute("ALTER TABLE settings RENAME COLUMN rchat_enabled TO radioworld_enabled")
-        connection.execute("ALTER TABLE settings RENAME COLUMN rchat_flash_enabled TO radioworld_flash_enabled")
-        connection.execute("ALTER TABLE settings RENAME COLUMN rchat_hold_seconds TO radioworld_hold_seconds")
-        connection.execute("ALTER TABLE settings RENAME COLUMN rchat_interface_ip TO radioworld_interface_ip")
-        connection.execute("ALTER TABLE settings DROP COLUMN rchat_username")
-        connection.execute(
-            "UPDATE settings SET radioworld_enabled = 1, radioworld_flash_enabled = 1, "
-            "radioworld_hold_seconds = 12, radioworld_interface_ip = '192.0.2.10'",
-        )
-
-    async def verify_migration() -> None:
-        database = DatabaseManager(settings.show_path)
-        try:
-            migrated = await initialise_show_file(database, settings)
-            assert migrated.rchat_enabled is True
-            assert migrated.rchat_flash_enabled is True
-            assert migrated.rchat_hold_seconds == 12
-            assert migrated.rchat_interface_ip == "192.0.2.10"
-            assert migrated.rchat_username == "Mic-Wise"
-        finally:
-            await database.dispose()
-
-    asyncio.run(verify_migration())
+    asyncio.run(scenario())
 
 
 def test_scene_crud_and_channel_delete_resequencing(tmp_path) -> None:
@@ -371,59 +298,18 @@ def test_scene_checklist_ticks_persist_beyond_off_state(tmp_path) -> None:
     asyncio.run(scenario())
 
 
-def test_showfile_v1_payload_still_imports(tmp_path) -> None:
-    settings = build_settings(tmp_path, "legacy.micwise")
-    legacy_payload = {
-        "format": "micwise-showfile",
-        "version": 1,
-        "settings": {
-            "sample_rate": 48000,
-            "channel_count": 2,
-            "buffer_duration_sec": 300,
-            "block_size": 480,
-            "audio_source_mode": "synthetic",
-            "audio_input_device": None,
-            "master_gain_db": 1.5,
-            "multi_listen_enabled": False,
-            "active_mode": "monitor",
-            "scene_mode_enabled": True,
-            "active_scene_order_index": 0,
-            "external_sync_enabled": False,
-            "external_sync_transport": "off",
-            "external_sync_osc_host": "0.0.0.0",
-            "external_sync_osc_port": 53001,
-            "external_sync_midi_input_name": None,
-        },
-        "channels": [
-            {"number": 1, "name": "Lead", "photo_path": "https://example.com/a.jpg"},
-            {"number": 2, "name": "Swing"},
-        ],
-        "scenes": [
-            {
-                "name": "Act 1",
-                "order_index": 0,
-                "channel_assignments": [{"channel_number": 1, "state": "ready"}],
-            },
-        ],
-    }
+def test_pre_alpha_showfile_is_rejected(tmp_path) -> None:
+    import pytest
+
+    settings = build_settings(tmp_path, "show.micwise")
 
     async def scenario() -> None:
         database = DatabaseManager(settings.show_path)
         try:
             await initialise_show_file(database, settings)
-            imported = await import_showfile(database, legacy_payload, settings)
-            assert imported.master_gain_db == 1.5
-
-            channels = await list_channels(database)
-            assert [channel.name for channel in channels] == ["Lead", "Swing"]
-            assert channels[0].photo_path == "https://example.com/a.jpg"
-
-            scenes = await list_scenes(database)
-            assert scenes[0].name == "Act 1"
-            assert [
-                (assignment.channel_id, assignment.state, assignment.checked)
-                for assignment in scenes[0].channel_assignments
-            ] == [(channels[0].id, "ready", False)]
+            with pytest.raises(ValueError, match="Unsupported Mic-Wise showfile version"):
+                await import_showfile(database, {"format": "micwise-showfile", "version": 1}, settings)
+            assert len(await list_channels(database)) == settings.default_channel_count
         finally:
             await database.dispose()
 
@@ -583,6 +469,44 @@ def test_create_scene_copies_checklist_ticks(tmp_path) -> None:
                 (assignment.channel_id, assignment.state, assignment.checked)
                 for assignment in created.channel_assignments
             ] == [(channels[0].id, "onstage", True)]
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_backup_compression_does_not_block_live_async_work(tmp_path, monkeypatch) -> None:
+    import threading
+    from app.database import repository
+
+    started = threading.Event()
+    release = threading.Event()
+    original = repository._compress_archive_members
+
+    def slow_compression(members):
+        started.set()
+        release.wait(timeout=1)
+        return original(members)
+
+    monkeypatch.setattr(repository, "_compress_archive_members", slow_compression)
+    settings = build_settings(tmp_path)
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            await initialise_show_file(database, settings)
+            task = asyncio.create_task(repository.export_show_archive(database, settings))
+            for _ in range(100):
+                if started.is_set():
+                    break
+                await asyncio.sleep(0.005)
+            try:
+                assert started.is_set()
+                # A meter/health task can run while compression is in progress.
+                assert not task.done()
+            finally:
+                release.set()
+            assert (await task).startswith(b"PK")
         finally:
             await database.dispose()
 

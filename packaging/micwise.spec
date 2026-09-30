@@ -11,6 +11,8 @@
 #   Linux    -> dist/MicWise (single executable file)
 
 import sys
+import os
+import runpy
 import sysconfig
 from pathlib import Path
 
@@ -19,6 +21,8 @@ from PyInstaller.utils.hooks import collect_submodules
 project_root = Path(SPECPATH).resolve().parent
 backend_root = project_root / "backend"
 frontend_dist = project_root / "frontend" / "dist"
+version_info = runpy.run_path(str(backend_root / "app" / "version.py"))
+signing_identity = os.environ.get("MICWISE_SIGNING_IDENTITY")
 
 is_macos = sys.platform == "darwin"
 is_windows = sys.platform.startswith("win")
@@ -50,7 +54,7 @@ hiddenimports = [
     *collect_submodules("uvicorn"),
     # Python 3.14 currently needs the broad fallback; earlier versions use
     # PyInstaller's NumPy hook and avoid scanning NumPy's large test tree.
-    *(collect_submodules("numpy") if sys.version_info >= (3, 14) else []),
+    *(collect_submodules("numpy", filter=lambda name: ".tests" not in name and ".testing" not in name and "mypy" not in name) if sys.version_info >= (3, 14) else []),
     # stdlib lazy imports missed on Python 3.14
     *collect_submodules("ctypes"),
     *collect_submodules("encodings"),
@@ -63,6 +67,7 @@ hiddenimports = [
     *collect_submodules("anyio"),
     # optional integrations imported lazily / by plugin name
     "mido.backends.rtmidi",
+    "rtmidi",
     "zeroconf",
     "ifaddr",
     "aiosqlite",
@@ -106,6 +111,22 @@ if onefile:
         icon=str(icon) if icon else None,
     )
 else:
+    from macholib.MachO import MachO
+    from macholib.mach_o import LC_BUILD_VERSION, LC_VERSION_MIN_MACOSX
+
+    # Honor the actual deployment target of every bundled native dependency.
+    # PyAV 17 requires macOS 14; Homebrew Python can require a newer macOS.
+    minimum_macos = (14, 0, 0)
+    for _, binary_path, _ in a.binaries:
+        try:
+            for header in MachO(binary_path).headers:
+                for command, data, _ in header.commands:
+                    if command.cmd in {LC_BUILD_VERSION, LC_VERSION_MIN_MACOSX}:
+                        encoded = data.minos if command.cmd == LC_BUILD_VERSION else data.version
+                        minimum_macos = max(minimum_macos, (encoded >> 16, (encoded >> 8) & 255, encoded & 255))
+        except (ValueError, OSError):
+            continue
+
     exe = EXE(
         pyz,
         a.scripts,
@@ -118,6 +139,8 @@ else:
         upx=False,
         console=False,
         icon=str(icon),
+        codesign_identity=signing_identity,
+        entitlements_file=str(project_root / "packaging" / "entitlements.plist") if signing_identity else None,
     )
 
     coll = COLLECT(
@@ -137,7 +160,10 @@ else:
         info_plist={
             "CFBundleName": "MicWise",
             "CFBundleDisplayName": "Mic-Wise",
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": version_info["VERSION"],
+            "CFBundleVersion": os.environ.get("MICWISE_BUILD_NUMBER", "1"),
+            "LSMultipleInstancesProhibited": True,
+            "LSMinimumSystemVersion": ".".join(map(str, minimum_macos)),
             "NSHighResolutionCapable": True,
             # Required for CoreAudio input capture from a bundled app;
             # without it macOS refuses the microphone permission prompt.

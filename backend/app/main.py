@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import multiprocessing as mp
 import sys
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from app.api.routes import router as api_router
 from app.api.websocket import WebSocketManager, router as websocket_router
 from app.audio.runtime import restart_audio_runtime, stop_audio_runtime
 from app.core.settings import MicWiseSettings
+from app.version import VERSION, RELEASE_LABEL
 from app.database.repository import initialise_show_file
 from app.database.session import DatabaseManager
 from app.network.discovery import ZeroconfService
@@ -39,13 +41,15 @@ async def lifespan(app: FastAPI):
 			port=settings.port,
 			properties={
 				b"app": b"micwise",
+				b"version": f"{VERSION}-{RELEASE_LABEL}".encode(),
 				b"show": settings.show_name.encode("utf-8"),
 				b"showFilename": settings.show_filename.encode("utf-8"),
 			},
 		)
 		try:
 			discovery_service.start()
-		except Exception:
+		except Exception as exc:
+			logging.getLogger(__name__).warning("Discovery unavailable: %s", exc)
 			discovery_service = None
 
 	app.state.settings = settings

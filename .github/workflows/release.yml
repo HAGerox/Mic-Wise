@@ -39,6 +39,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --ignore-scripts
 
+      - name: Test frontend
+        run: npm run test
+
       - name: Build frontend
         run: npm run build
 
@@ -65,6 +68,10 @@ jobs:
         include:
           - name: macOS x64
             runner: macos-15-intel
+            architecture: x64
+          - name: macOS Apple Silicon
+            runner: macos-15
+            architecture: arm64
           - name: Windows x64
             runner: windows-latest
           - name: Linux x64
@@ -81,6 +88,7 @@ jobs:
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: "3.11"
+          architecture: ${{ matrix.architecture || 'x64' }}
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
@@ -105,6 +113,9 @@ jobs:
         if: runner.os == 'macOS'
         run: python -m pip install pyobjc-framework-Cocoa
 
+      - name: Test backend
+        run: python -m pytest backend/tests
+
       - name: Build standalone app
         run: python packaging/build.py --skip-frontend
 
@@ -112,8 +123,9 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          asset="MicWise-macOS-x64.zip"
-          ditto -c -k --sequesterRsrc --keepParent dist/MicWise.app "$asset"
+          asset="MicWise-macOS-${{ matrix.architecture }}.dmg"
+          cp dist/*.dmg "$asset"
+          shasum -a 256 "$asset" > "$asset.sha256"
           echo "RELEASE_ASSET=$asset" >> "$GITHUB_ENV"
 
       - name: Package Windows app
@@ -135,7 +147,9 @@ jobs:
       - name: Store packaged app
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
         with:
-          path: ${{ env.RELEASE_ASSET }}
+          path: |
+            ${{ env.RELEASE_ASSET }}
+            ${{ env.RELEASE_ASSET }}.sha256
           archive: false
           retention-days: 1
 
@@ -161,4 +175,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG_NAME" release-assets/* --clobber
+        run: |
+          # Preserve installers already tested and uploaded locally for this tag.
+          gh release view "$TAG_NAME" --json assets --jq '.assets[].name' > existing-assets.txt
+          for asset in release-assets/*; do
+            if ! grep -Fxq "$(basename "$asset")" existing-assets.txt; then
+              gh release upload "$TAG_NAME" "$asset"
+            fi
+          done

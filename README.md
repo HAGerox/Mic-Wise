@@ -60,10 +60,13 @@ python packaging/build.py
 This builds the frontend, then bundles the backend, the UI, and all native
 dependencies into a single artifact per platform:
 
-- **macOS**: `dist/MicWise.app` — copy it to the show computer and
-  double-click it. The first launch on a new machine may need
-  right-click → Open to pass Gatekeeper. Quit it like any app (Dock → Quit
-  or Cmd-Q); the server log is written to the data directory below.
+- **macOS**: `dist/MicWise-0.1.0-alpha.4-macOS-arm64.dmg` on Apple Silicon
+  (or an `x86_64.dmg` on Intel). Release builds require macOS 14 or later.
+  Open the disk image, drag `MicWise.app` to
+  Applications, eject the image, and open the app. No Python or Node installation
+  is needed. The operator interface opens in your default browser. Click the Dock
+  icon or choose **Open Mic-Wise** to reopen it; quit with Dock → Quit or Cmd-Q.
+  Startup failures appear in a dialog and details go to the server log.
 - **Windows**: `dist/MicWise.exe` — a single file. Double-click to run; a
   console window shows the server log, and closing it stops the server.
 - **Linux**: `dist/MicWise` — a single executable file.
@@ -83,6 +86,44 @@ Support/Mic-Wise` on macOS, `%APPDATA%\Mic-Wise` on Windows,
 `~/.local/share/Mic-Wise` on Linux) instead of `backend/data`. All
 `MICWISE_*` environment variables still apply, e.g. `MICWISE_PORT=9000` or
 `MICWISE_NO_BROWSER=1`.
+
+To update on macOS, quit Mic-Wise, replace `/Applications/MicWise.app` with the
+new app, and reopen it. Show data, photos, and mic-check ticks remain in
+`~/Library/Application Support/Mic-Wise`; replacing the app never removes them.
+While monitoring, the app prevents App Nap and automatic idle sleep so closing
+the browser does not pause the audio service. Only one app may own a data
+directory, and the launcher reserves its HTTP port before starting audio so duplicate launches cannot truncate an active buffer.
+
+Local alpha builds are ad-hoc signed and **not notarized**. On a receiving Mac,
+if Gatekeeper blocks launch, attempt to open the app, then use **System Settings
+→ Privacy & Security → Open Anyway**. A normal trusted first launch requires an
+Apple-issued Developer ID Application certificate and notarization. For that
+build, set `MICWISE_SIGNING_IDENTITY` to the certificate name and
+`MICWISE_NOTARY_PROFILE` to a `notarytool` Keychain profile before running the
+build command. The build verifies signing, submits the app, staples the ticket,
+and assesses Gatekeeper before making the disk image. Do not use the local
+self-signed T3 identity as a distribution certificate.
+
+For macOS release builds, use a clean Python 3.11 environment as in release CI;
+Homebrew Python may impose a newer macOS requirement. The build derives the
+minimum macOS version from bundled native libraries.
+
+The alpha release identity lives in `backend/app/version.py`; increment it for
+each release. `MICWISE_BUILD_NUMBER` supplies the macOS bundle build number.
+The installer includes a checksum and `dist/release-info.json` records the source
+revision, whether working-tree changes were included, and notarization status.
+The release workflow tests the software and builds separate Intel and Apple
+Silicon installers. This first alpha no longer migrates pre-alpha database
+schemas or imports version 1 showfiles, and removes retired RadioWorld field
+names and UI modes. The `hardware` UI/API alias remains supported and normalises to `sounddevice`.
+
+Standalone apps ignore working-directory `.env` files; explicit `MICWISE_*`
+environment variables still apply. Discovery is enabled by default. Stage Backup
+(the `sound-backup` project) identifies the app through `GET /api/health` and
+pulls `GET /api/showfile/export?format=archive`. That archive includes photos,
+scene staging, mic-check ticks, and SHA-256 checksums, and can be restored with
+**Setup → Import show**. Its **Back up now** link launches Stage Backup on the
+same Mac; network backups are initiated from the Stage Backup hub.
 
 The source-checkout workflow above is unchanged and remains the development
 path.
@@ -144,8 +185,8 @@ Restoring that archive into any Mic-Wise session reproduces the show exactly:
 channels, photos, scene staging, mic-check ticks, and every setting. Every member
 is size- and checksum-verified on import, and paths that would escape the photo
 library are rejected. A plain `.micwise.json` showfile is still accepted for
-lightweight sharing, and showfiles exported by earlier versions (format version 1)
-import unchanged.
+lightweight sharing using the current format (version 2). Pre-alpha version 1
+showfiles are no longer supported.
 
 Photos can be a remote URL or an upload. Uploaded photos live under
 `data_directory/assets/photos/` and are embedded in the archive; remote URLs are

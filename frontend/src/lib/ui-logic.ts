@@ -209,13 +209,13 @@ export function buildEnergyLinePath(
 
 export function normaliseActiveView(activeMode: string | null | undefined): ActiveView {
   const mode = String(activeMode ?? 'monitor').trim().toLowerCase();
-  if (mode === 'configure' || mode === 'program' || mode === 'setup') {
+  if (mode === 'setup') {
     return 'setup';
   }
-  if (mode === 'scene' || mode === 'show') {
+  if (mode === 'show') {
     return 'show';
   }
-  return mode === 'monitor' ? 'monitor' : 'monitor';
+  return 'monitor';
 }
 
 export function getShowChannelVisualState(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import socket
 from dataclasses import dataclass, field
 
@@ -22,26 +23,37 @@ class ZeroconfService:
 
     def start(self) -> None:
         """Register the service with the local Zeroconf responder."""
-        host_ip = self.host_ip or self._detect_host_ip()
-        self.zeroconf = Zeroconf()
-        self.service_info = ServiceInfo(
-            type_=self.service_type,
-            name=f"{self.service_name}.{self.service_type}",
-            addresses=[socket.inet_aton(host_ip)],
-            port=self.port,
-            properties={b"path": b"/", **self.properties},
-            server=f"{self.service_name}.local.",
-        )
-        self.zeroconf.register_service(self.service_info)
+        try:
+            host_ip = self.host_ip or self._detect_host_ip()
+            self.zeroconf = Zeroconf()
+            self.service_info = ServiceInfo(
+                type_=self.service_type,
+                name=f"{self.service_name}-{self.port}.{self.service_type}",
+                addresses=[socket.inet_aton(host_ip)],
+                port=self.port,
+                properties={b"path": b"/", **self.properties},
+                server=f"{socket.gethostname().partition('.')[0]}.local.",
+            )
+            self.zeroconf.register_service(self.service_info, allow_name_change=True)
+        except Exception:
+            self.stop()
+            raise
 
     def stop(self) -> None:
         """Unregister and close the Zeroconf responder."""
-        if self.zeroconf is not None and self.service_info is not None:
-            self.zeroconf.unregister_service(self.service_info)
-        if self.zeroconf is not None:
-            self.zeroconf.close()
-        self.zeroconf = None
-        self.service_info = None
+        try:
+            if self.zeroconf is not None and self.service_info is not None:
+                self.zeroconf.unregister_service(self.service_info)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not unregister discovery")
+        finally:
+            try:
+                if self.zeroconf is not None:
+                    self.zeroconf.close()
+            except Exception:
+                logging.getLogger(__name__).exception("Could not close discovery")
+            self.zeroconf = None
+            self.service_info = None
 
     @staticmethod
     def _detect_host_ip() -> str:

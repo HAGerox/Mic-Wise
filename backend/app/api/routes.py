@@ -64,12 +64,9 @@ from app.database.repository import (
 )
 from app.network.interfaces import list_ipv4_network_interfaces
 
-try:
-	from importlib.metadata import version as _package_version
+from app.version import VERSION, RELEASE_LABEL
 
-	BACKEND_VERSION = _package_version("mic-wise")
-except Exception:
-	BACKEND_VERSION = "0.0.0"
+BACKEND_VERSION = f"{VERSION}-{RELEASE_LABEL}"
 
 router = APIRouter()
 
@@ -498,7 +495,7 @@ def _archive_counts(data: bytes) -> tuple[int, int, int]:
 async def upload_showfile(request: Request) -> ShowfileImportResponse:
 	"""Replace the current show with an imported showfile or show archive.
 
-	Accepts a JSON showfile body (legacy) or ``multipart/form-data`` carrying
+	Accepts a JSON showfile body or ``multipart/form-data`` carrying
 	either a ``.micwise.zip`` archive or a ``.micwise.json`` showfile.
 	"""
 	database = request.app.state.database

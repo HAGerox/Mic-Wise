@@ -11,6 +11,7 @@ greenlet
 aiosqlite
 pydantic-settings
 mido
+python-rtmidi
 python-osc
 pytest
 httpx

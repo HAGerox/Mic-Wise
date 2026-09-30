@@ -68,6 +68,12 @@ class AudioEngineProcess(SPAWN_CONTEXT.Process):
 
 	def run(self) -> None:
 		"""Start the configured audio source loop."""
+		# Windowed frozen children start with no Python stderr. Keep device
+		# failures in the same operator log as the parent server.
+		log_path = os.environ.get("MICWISE_LOG_FILE")
+		if sys.stderr is None and log_path:
+			log_file = open(log_path, "a", buffering=1, encoding="utf-8")
+			sys.stdout = sys.stderr = log_file
 		self._engine_parent_pid = os.getppid()
 		try:
 			with AudioBuffer(self.config.buffer_path, writable=True) as buffer:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.sync.service import ExternalSyncEvent
 
@@ -352,22 +352,10 @@ class ShowfileSettingsPayload(BaseModel):
     external_sync_midi_input_name: str | None = None
     alerts_enabled: bool = True
     alert_popup_duration_sec: int = 6
-    rchat_enabled: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("rchat_enabled", "radioworld_enabled"),
-    )
-    rchat_flash_enabled: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("rchat_flash_enabled", "radioworld_flash_enabled"),
-    )
-    rchat_hold_seconds: int = Field(
-        default=8,
-        validation_alias=AliasChoices("rchat_hold_seconds", "radioworld_hold_seconds"),
-    )
-    rchat_interface_ip: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("rchat_interface_ip", "radioworld_interface_ip"),
-    )
+    rchat_enabled: bool = False
+    rchat_flash_enabled: bool = False
+    rchat_hold_seconds: int = 8
+    rchat_interface_ip: str | None = None
     rchat_username: str = "Mic-Wise"
 
 

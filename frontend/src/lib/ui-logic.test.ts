@@ -110,12 +110,12 @@ describe('ui-logic helpers', () => {
     expect(path).toBe('M0.00,22.00L100.00,2.00');
   });
 
-  it('normaliseActiveView preserves new modes and maps legacy names', () => {
+  it('normaliseActiveView preserves supported modes and defaults unknown names', () => {
     expect(normaliseActiveView('monitor')).toBe('monitor');
     expect(normaliseActiveView('show')).toBe('show');
     expect(normaliseActiveView('setup')).toBe('setup');
-    expect(normaliseActiveView('configure')).toBe('setup');
-    expect(normaliseActiveView('scene')).toBe('show');
+    expect(normaliseActiveView('configure')).toBe('monitor');
+    expect(normaliseActiveView('scene')).toBe('monitor');
   });
 
   it('getShowChannelVisualState maps scene inclusion and checklist state', () => {
