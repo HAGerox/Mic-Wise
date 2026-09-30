@@ -36,8 +36,12 @@ the publication.
 
 The frontend dependency audit exposed two related moderate findings in Vitest's
 development-only mocking tools. Updating to Vitest 4.1.11 resolved both; `npm audit`
-then reported zero findings. `pip-audit` also reported no known vulnerabilities
-for the Apple silicon build's installed Python dependency inventory.
+then reported zero findings. The Intel environment initially resolved older
+cryptography and Zeroconf wheels with known vulnerabilities. Both were upgraded
+to patched source builds, with OpenSSL linked statically for cryptography.
+`pip-audit` then reported no known vulnerabilities for either architecture's
+installed Python dependency inventory. Minimum patched dependency versions are
+required by the source requirements and the Intel release workflow.
 
 Raw inventories, scanner reports, downloaded old installers, temporary show data
 and build environments remain in ignored local directories. Only this summary

@@ -4,7 +4,8 @@ python-multipart
 sounddevice
 numpy
 aiortc
-zeroconf
+cryptography>=50.0.0
+zeroconf>=0.149.16
 ifaddr
 sqlalchemy
 greenlet

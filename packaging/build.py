@@ -178,6 +178,8 @@ def build_app() -> None:
             "Licensed under GNU GPL version 3; see LICENSE.txt.\n",
             encoding="utf-8",
         )
+        shutil.copytree(PROJECT_ROOT / "packaging" / "licenses", resources / "licenses",
+                        dirs_exist_ok=True)
         # Preserve the notices supplied by the installed Python distributions.
         for package in distributions():
             for member in package.files or []:

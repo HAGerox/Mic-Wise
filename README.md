@@ -108,6 +108,12 @@ For macOS release builds, use a clean Python 3.11 environment as in release CI;
 Homebrew Python may impose a newer macOS requirement. The build derives the
 minimum macOS version from bundled native libraries.
 
+On Intel Macs, the current cryptography dependency builds from source. Install
+`openssl@3` and `rust` with Homebrew, then set `OPENSSL_STATIC=1` and
+`OPENSSL_DIR="$(brew --prefix openssl@3)"` when installing the backend requirements.
+This keeps the bundled crypto library independent of the build Mac's Homebrew
+installation. Release CI performs this setup automatically.
+
 The alpha release identity lives in `backend/app/version.py`; increment it for
 each release. `MICWISE_BUILD_NUMBER` supplies the macOS bundle build number.
 The installer includes a checksum and `dist/release-info.json` records the source
