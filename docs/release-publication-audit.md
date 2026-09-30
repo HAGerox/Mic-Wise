@@ -34,6 +34,11 @@ Release screenshots use a separate synthetic show with generic channel names.
 Neither the development show nor locally installed Sound Backup source is part of
 the publication.
 
+The frontend dependency audit exposed two related moderate findings in Vitest's
+development-only mocking tools. Updating to Vitest 4.1.11 resolved both; `npm audit`
+then reported zero findings. `pip-audit` also reported no known vulnerabilities
+for the Apple silicon build's installed Python dependency inventory.
+
 Raw inventories, scanner reports, downloaded old installers, temporary show data
 and build environments remain in ignored local directories. Only this summary
 and the intended source and screenshots are published. Local checkpoint and audit
