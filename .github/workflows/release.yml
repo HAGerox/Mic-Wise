@@ -1,6 +1,12 @@
 name: Build release apps
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build
+        required: true
+        type: string
   release:
     types:
       - published
@@ -9,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.release.id }}
+  group: release-${{ github.event.release.id || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -26,7 +32,7 @@ jobs:
       - name: Check out release tag
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
           persist-credentials: false
 
       - name: Set up Node.js
@@ -81,7 +87,7 @@ jobs:
       - name: Check out release tag
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
           persist-credentials: false
 
       - name: Set up Python
@@ -156,9 +162,15 @@ jobs:
       - name: Store packaged app
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
         with:
-          path: |
-            ${{ env.RELEASE_ASSET }}
-            ${{ env.RELEASE_ASSET }}.sha256
+          path: ${{ env.RELEASE_ASSET }}
+          archive: false
+          retention-days: 1
+
+      - name: Store macOS checksum
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
+        with:
+          path: ${{ env.RELEASE_ASSET }}.sha256
           archive: false
           retention-days: 1
 
@@ -183,7 +195,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           # Preserve installers already tested and uploaded locally for this tag.
           gh release view "$TAG_NAME" --json assets --jq '.assets[].name' > existing-assets.txt
