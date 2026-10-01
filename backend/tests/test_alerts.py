@@ -4,11 +4,98 @@ from __future__ import annotations
 
 import asyncio
 import socket
+import threading
 
 import numpy as np
 
 from app.audio.alerts import detect_feedback_severity, detect_pop_severity, detect_wind_severity
 from app.network.rchat import RChatBroadcaster, build_rchat_packet
+
+
+def test_detection_scores_are_calculated_once_per_channel(monkeypatch) -> None:
+    from app.audio import alerts
+
+    scores = []
+
+    def score(kind):
+        def calculate(*_args):
+            scores.append(kind)
+            return 0.8
+        return calculate
+
+    monkeypatch.setattr(alerts, "_normalised_pop_score", score("pop"))
+    monkeypatch.setattr(alerts, "_normalised_wind_score", score("wind"))
+    monkeypatch.setattr(alerts, "_normalised_feedback_score", score("feedback"))
+    outcomes = alerts._build_detection_outcomes(np.zeros(100, dtype=np.float32), 48_000)
+
+    assert scores == ["pop", "wind", "feedback"]
+    assert [outcome.kind for outcome in outcomes] == ["pop", "wind", "feedback"]
+    assert all(outcome.severity == "critical" for outcome in outcomes)
+
+
+def test_slow_alert_detection_leaves_api_loop_responsive(tmp_path, monkeypatch) -> None:
+    from app.audio import alerts
+    from app.audio.buffer import AudioBuffer
+
+    buffer_path = str(tmp_path / "audio.buffer")
+    with AudioBuffer(buffer_path, channels=1, sample_rate=1_000, duration_sec=1, create=True) as writer:
+        writer.write(np.zeros((100, 1), dtype=np.int16))
+
+    service = alerts.AlertAnalysisService(buffer_path=buffer_path, sample_rate=1_000, channels=1)
+    release = threading.Event()
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        started = asyncio.Event()
+        finished = threading.Event()
+        worker_was_released = []
+
+        def slow_detect(*_args):
+            loop.call_soon_threadsafe(started.set)
+            worker_was_released.append(release.wait(timeout=2))
+            finished.set()
+            return []
+
+        monkeypatch.setattr(alerts, "_build_detection_outcomes", slow_detect)
+        await service.start()
+        try:
+            await asyncio.wait_for(started.wait(), timeout=3)
+            # Stand in for a channel/scene request while detection is running.
+            assert not finished.is_set()
+            release.set()
+            await asyncio.to_thread(finished.wait, 2)
+            assert worker_was_released == [True]
+        finally:
+            release.set()
+            await service.stop()
+
+    asyncio.run(scenario())
+
+
+def test_disabling_alerts_during_analysis_does_not_restore_old_alerts(tmp_path, monkeypatch) -> None:
+    from app.audio import alerts
+    from app.audio.buffer import AudioBuffer
+
+    buffer_path = str(tmp_path / "audio.buffer")
+    with AudioBuffer(buffer_path, channels=1, sample_rate=1_000, duration_sec=1, create=True) as writer:
+        writer.write(np.zeros((100, 1), dtype=np.int16))
+    service = alerts.AlertAnalysisService(buffer_path=buffer_path, sample_rate=1_000, channels=1)
+
+    async def scenario():
+        async def disable_during_work(function, *args):
+            service.apply_settings(enabled=False)
+            return [[alerts.DetectionOutcome("pop", "critical", 1.0, "Pop", "Pop")]]
+
+        monkeypatch.setattr(alerts.asyncio, "to_thread", disable_during_work)
+        await service.start()
+        try:
+            await asyncio.sleep(0)
+            assert service.get_active_alerts() == []
+            assert service.latest_alerts == []
+        finally:
+            await service.stop()
+
+    asyncio.run(scenario())
 
 
 def test_build_rchat_packet_uses_expected_utf8_wire_format() -> None:

@@ -304,6 +304,7 @@ function AppContent(): JSX.Element {
   });
 
   const { meterMap, meterHistoryMap } = useMeters({
+    enabled: isMonitorLikeView,
     initialSnapshot: latestMetersQuery.data,
     onOpen: () => {
       if (state.selectedChannelIds.size === 0 && healthQuery.data?.audio_engine_running) {
@@ -984,7 +985,7 @@ function AppContent(): JSX.Element {
       >
         <div className="monitor-workspace">
           <div className="channel-grid-shell">
-            <ChannelGrid
+            {isMonitorLikeView && <ChannelGrid
               channels={channels}
               meterMap={meterMap}
               meterHistoryMap={meterHistoryMap}
@@ -1002,7 +1003,7 @@ function AppContent(): JSX.Element {
               }}
               onPersistOrder={handlePersistOrder}
               onCloseModal={() => dispatch({ type: 'closeModal' })}
-            />
+            />}
           </div>
         </div>
 

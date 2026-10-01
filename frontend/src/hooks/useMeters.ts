@@ -12,13 +12,14 @@ function snapshotToMap(
 }
 
 interface UseMetersOptions {
+  enabled?: boolean;
   initialSnapshot?: MeterSnapshotResponse | null;
   onOpen?: () => void;
   onError?: () => void;
 }
 
 export function useMeters(
-  { initialSnapshot, onOpen, onError }: UseMetersOptions,
+  { enabled = true, initialSnapshot, onOpen, onError }: UseMetersOptions,
 ): { meterMap: Map<number, MeterChannelSnapshot>; meterHistoryMap: Map<number, number[]> } {
   const [meterMap, setMeterMap] = useState<Map<number, MeterChannelSnapshot>>(() => snapshotToMap(initialSnapshot));
   const [meterHistoryMap, setMeterHistoryMap] = useState<Map<number, number[]>>(() => new Map());
@@ -61,6 +62,9 @@ export function useMeters(
   }, [initialSnapshot]);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const meterSocket = new WebSocket(`${protocol}://${window.location.host}/ws/meters`);
 
@@ -75,9 +79,12 @@ export function useMeters(
     };
 
     return () => {
+      meterSocket.onmessage = null;
+      meterSocket.onopen = null;
+      meterSocket.onerror = null;
       meterSocket.close();
     };
-  }, [applySnapshot]);
+  }, [applySnapshot, enabled]);
 
   return {
     meterMap,

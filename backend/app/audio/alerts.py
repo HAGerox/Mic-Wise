@@ -167,13 +167,13 @@ def detect_feedback_severity(samples: np.ndarray, sample_rate: int) -> AlertSeve
 
 def _build_detection_outcomes(samples: np.ndarray, sample_rate: int) -> list[DetectionOutcome]:
     pop_score = _normalised_pop_score(samples)
-    pop_severity = detect_pop_severity(samples)
+    pop_severity = _severity_from_score(pop_score, warning_threshold=0.42, critical_threshold=0.74)
 
     wind_score = _normalised_wind_score(samples, sample_rate)
-    wind_severity = detect_wind_severity(samples, sample_rate)
+    wind_severity = _severity_from_score(wind_score, warning_threshold=0.46, critical_threshold=0.72)
 
     feedback_score = _normalised_feedback_score(samples, sample_rate)
-    feedback_severity = detect_feedback_severity(samples, sample_rate)
+    feedback_severity = _severity_from_score(feedback_score, warning_threshold=0.44, critical_threshold=0.7)
 
     outcomes: list[DetectionOutcome] = []
     if pop_severity is not None:
@@ -207,6 +207,17 @@ def _build_detection_outcomes(samples: np.ndarray, sample_rate: int) -> list[Det
             ),
         )
     return outcomes
+
+
+def _detect_chunk(chunk: np.ndarray, sample_rate: int, channels: int) -> list[list[DetectionOutcome]]:
+    """Analyze copied PCM without touching runtime state or the mapped buffer."""
+    if chunk.size == 0:
+        return []
+    normalized = chunk.astype(np.float32) / 32_768.0
+    return [
+        _build_detection_outcomes(normalized[:, input_index], sample_rate)
+        for input_index in range(min(channels, normalized.shape[1]))
+    ]
 
 
 class AlertAnalysisService:
@@ -290,7 +301,13 @@ class AlertAnalysisService:
         """Poll the shared buffer and maintain the active alert set."""
         with AudioBuffer(self.buffer_path) as buffer:
             while True:
-                self._analyze_buffer(buffer)
+                if self.enabled:
+                    # Only copied arrays cross into the worker. Await each pass
+                    # so analysis cannot accumulate while edits use the API loop.
+                    chunk = buffer.read_latest(self.analysis_window_frames)
+                    outcomes = await asyncio.to_thread(_detect_chunk, chunk, self.sample_rate, self.channels)
+                    if self.enabled:
+                        self._apply_detection_outcomes(outcomes)
                 await asyncio.sleep(self.poll_interval_seconds)
 
     def _analyze_buffer(self, buffer: AudioBuffer) -> None:
@@ -300,18 +317,17 @@ class AlertAnalysisService:
             self.latest_alerts = []
             return
 
-        chunk = buffer.read_latest(self.analysis_window_frames)
-        if chunk.size == 0:
-            self._expire_stale_alerts(time.time(), active_keys=set())
-            return
+        self._apply_detection_outcomes(
+            _detect_chunk(buffer.read_latest(self.analysis_window_frames), self.sample_rate, self.channels),
+        )
 
-        normalized = chunk.astype(np.float32) / 32_768.0
+    def _apply_detection_outcomes(self, outcomes_by_input: list[list[DetectionOutcome]]) -> None:
+        """Update alert state and schedule notifications on the API event loop."""
         now = time.time()
         active_keys: set[tuple[AlertKind, int]] = set()
         new_notifications: list[str] = []
-        for input_index in range(min(self.channels, normalized.shape[1])):
-            channel_samples = normalized[:, input_index]
-            for outcome in _build_detection_outcomes(channel_samples, self.sample_rate):
+        for input_index, outcomes in enumerate(outcomes_by_input):
+            for outcome in outcomes:
                 key = (outcome.kind, input_index)
                 active_keys.add(key)
                 existing_alert = self._active_alerts.get(key)
