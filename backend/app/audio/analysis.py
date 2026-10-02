@@ -45,6 +45,7 @@ class MeterAnalysisService:
 		poll_interval_ms: int,
 		playback_delay_frames: int = 0,
 		broadcaster: object | None = None,
+		metrics: object | None = None,
 	) -> None:
 		self.buffer_path = buffer_path
 		self.sample_rate = sample_rate
@@ -53,6 +54,7 @@ class MeterAnalysisService:
 		self.poll_interval_seconds = poll_interval_ms / 1000.0
 		self.playback_delay_frames = max(0, playback_delay_frames)
 		self.broadcaster = broadcaster
+		self.metrics = metrics
 		self._task: asyncio.Task[None] | None = None
 		self.latest_snapshot = MeterSnapshot(
 			write_head=0,
@@ -86,6 +88,8 @@ class MeterAnalysisService:
 		with AudioBuffer(self.buffer_path) as buffer:
 			while True:
 				self.latest_snapshot = self._calculate_snapshot(buffer)
+				if self.metrics is not None:
+					self.metrics.record_meter_snapshot(self.latest_snapshot)
 				if self.broadcaster is not None:
 					await self.broadcaster.broadcast(self.latest_snapshot.to_dict())
 				await asyncio.sleep(self.poll_interval_seconds)

@@ -13,6 +13,11 @@ class WebSocketManager:
 	def __init__(self) -> None:
 		self._connections: set[WebSocket] = set()
 
+	@property
+	def connection_count(self) -> int:
+		"""Return the number of currently connected clients."""
+		return len(self._connections)
+
 	async def connect(self, websocket: WebSocket) -> None:
 		"""Accept and register a new WebSocket connection."""
 		await websocket.accept()

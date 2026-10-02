@@ -210,6 +210,28 @@ that opens Stage Backup and runs a one-click backup of this show, when Stage Bac
 is installed on the same machine. Across the network, use the single **Back up now**
 button in Stage Backup itself.
 
+## Prometheus metrics
+
+`GET /metrics` serves the latest collected values in the Prometheus text format.
+The meter and alert analysis loops push into an in-process store; scrapes only
+sample cheap runtime state, so they never touch the audio buffer.
+
+| Metric | Meaning |
+| --- | --- |
+| `micwise_input_rms_level{input}` / `micwise_input_peak_level{input}` | Latest level per physical input, linear 0–1 of full scale |
+| `micwise_audio_alerts_total{kind,severity,input}` | Alert onsets (`pop`, `wind`, `feedback`); severity is the onset severity |
+| `micwise_audio_alerts_active{kind,severity}` | Alerts active right now |
+| `micwise_audio_frames_written_total` | Frames the audio engine has written; a flat rate means a stalled engine |
+| `micwise_audio_engine_up`, `micwise_meter_last_update_timestamp_seconds` | Engine process liveness and meter freshness |
+| `micwise_audio_input_channels`, `micwise_audio_sample_rate_hertz`, `micwise_audio_source_info{mode}` | Audio runtime configuration |
+| `micwise_websocket_clients`, `micwise_webrtc_listeners`, `micwise_scene_sync_listening{transport}` | Connected clients and listeners |
+| `micwise_build_info{version,release}` | Build identity |
+
+Pops per minute per input: `60 * rate(micwise_audio_alerts_total{kind="pop"}[5m])`.
+Peak level in dBFS: `20 * log10(micwise_input_peak_level)`. Alerts only count
+while alert detection is enabled, and repeated pops on one input within the
+2.5 s alert hold window count as a single onset.
+
 ## Configuration
 
 `backend/app/core/settings.py` uses `pydantic-settings`, the `MICWISE_` prefix, and an optional repo-root `.env` file.

@@ -235,6 +235,7 @@ class AlertAnalysisService:
         notification_cooldown_ms: int = 8_000,
         enabled: bool = True,
         notifier: AlertNotifier | None = None,
+        metrics: object | None = None,
     ) -> None:
         self.buffer_path = buffer_path
         self.sample_rate = sample_rate
@@ -245,6 +246,7 @@ class AlertAnalysisService:
         self.notification_cooldown_seconds = max(0.5, notification_cooldown_ms / 1000.0)
         self.enabled = enabled
         self.notifier = notifier
+        self.metrics = metrics
         self.latest_alerts: list[AudioAlert] = []
         self._active_alerts: dict[tuple[AlertKind, int], AudioAlert] = {}
         self._last_notified_at: dict[tuple[AlertKind, int], float] = {}
@@ -344,6 +346,12 @@ class AlertAnalysisService:
                         updated_at=now,
                     )
                     self._active_alerts[key] = alert
+                    if self.metrics is not None:
+                        self.metrics.record_alert_onset(
+                            kind=alert.kind,
+                            severity=alert.severity,
+                            input_index=input_index,
+                        )
                     new_notifications.append(self._format_notification_message(alert))
                 else:
                     should_notify_again = (

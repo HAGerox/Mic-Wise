@@ -254,6 +254,11 @@ class WebRTCStreamManager:
 		self.total_channels = total_channels
 		self._peer_connections: dict[RTCPeerConnection, BufferAudioStreamTrack] = {}
 
+	@property
+	def connection_count(self) -> int:
+		"""Return the number of active listener peer connections."""
+		return len(self._peer_connections)
+
 	async def create_answer(
 		self,
 		*,

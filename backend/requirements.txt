@@ -14,5 +14,6 @@ pydantic-settings
 mido
 python-rtmidi
 python-osc
+prometheus-client
 pytest
 httpx

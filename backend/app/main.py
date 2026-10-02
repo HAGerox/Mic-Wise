@@ -13,8 +13,10 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router as api_router
+from app.api.metrics import router as metrics_router
 from app.api.websocket import WebSocketManager, router as websocket_router
 from app.audio.runtime import restart_audio_runtime, stop_audio_runtime
+from app.core.metrics import MetricsStore
 from app.core.settings import MicWiseSettings
 from app.version import VERSION, RELEASE_LABEL
 from app.database.repository import initialise_show_file
@@ -56,6 +58,7 @@ async def lifespan(app: FastAPI):
 			discovery_service = None
 
 	app.state.settings = settings
+	app.state.metrics = MetricsStore(version=VERSION, release=RELEASE_LABEL)
 	app.state.database = database
 	app.state.websocket_manager = websocket_manager
 	app.state.discovery_service = discovery_service
@@ -112,6 +115,8 @@ def create_app() -> FastAPI:
 	app = FastAPI(title="Mic-Wise Backend", lifespan=lifespan)
 	app.include_router(api_router, prefix="/api")
 	app.include_router(websocket_router)
+	# Registered before the "/" static mount so the frontend cannot shadow it.
+	app.include_router(metrics_router)
 	frontend_directory = _frontend_directory()
 	if frontend_directory is not None:
 		app.mount(
