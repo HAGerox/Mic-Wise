@@ -60,7 +60,7 @@ python packaging/build.py
 This builds the frontend, then bundles the backend, the UI, and all native
 dependencies into a single artifact per platform:
 
-- **macOS**: `dist/MicWise-0.1.0-alpha.6-macOS-arm64.dmg`. macOS builds are
+- **macOS**: `dist/MicWise-0.1.0-alpha.7-macOS-arm64.dmg`. macOS builds are
   Apple silicon only and require macOS 14 or later; the release asset is
   `MicWise-macOS.dmg`.
   Open the disk image, drag `MicWise.app` to
@@ -77,9 +77,9 @@ browser; other machines on the network can connect to
 `http://<host-ip>:8000/`.
 
 The build derives the native app icon from
-`packaging/assets/micwise-icon-source.png`, centre-cropping it to a square
-before embedding an `.icns` in the macOS app or an `.ico` in the Windows
-executable. Linux remains a single executable without a separate icon file.
+`packaging/assets/micwise-icon-source.png`, a finished 1024x1024 macOS icon
+with transparent corners. It is converted unchanged to an `.icns` (with `sips`
+and `iconutil`) for the macOS app and an `.ico` for the Windows executable. Linux remains a single executable without a separate icon file.
 
 Standalone builds keep show files (and `micwise-server.log` for the macOS
 app) in the per-user data directory (`~/Library/Application

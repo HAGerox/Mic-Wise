@@ -33,8 +33,6 @@ VERSION_INFO = runpy.run_path(str(PROJECT_ROOT / "backend" / "app" / "version.py
 RELEASE_VERSION = f"{VERSION_INFO['VERSION']}-{VERSION_INFO['RELEASE_LABEL']}"
 ICON_SOURCE = PROJECT_ROOT / "packaging" / "assets" / "micwise-icon-source.png"
 ICON_OUTPUT_DIRECTORY = PROJECT_ROOT / "build" / "icons"
-ICON_ARTWORK_SCALE = 1.16
-MACOS_ICON_INSET = 96
 
 
 def run(command: list[str], cwd: Path) -> None:
@@ -80,61 +78,40 @@ def prepare_app_icon() -> None:
     if not ICON_SOURCE.exists():
         raise SystemExit(f"App icon source is missing: {ICON_SOURCE}")
 
-    from PIL import Image, ImageChops, ImageDraw
-
+    # The source is a finished 1024x1024 macOS app icon: the tile already has
+    # the standard inset and transparent corners, so it is used unchanged.
     ICON_OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    with Image.open(ICON_SOURCE) as source:
-        source = source.convert("RGBA")
-        side = min(source.size)
-        left = (source.width - side) // 2
-        top = (source.height - side) // 2
-        square = source.crop((left, top, left + side, top + side))
-        artwork_side = round(side / ICON_ARTWORK_SCALE)
-        artwork_left = (side - artwork_side) // 2
-        square = square.crop(
-            (
-                artwork_left,
-                artwork_left,
-                artwork_left + artwork_side,
-                artwork_left + artwork_side,
-            ),
-        )
-        master = square.resize((1024, 1024), Image.Resampling.LANCZOS)
+    if sys.platform == "darwin":
+        output = ICON_OUTPUT_DIRECTORY / "MicWise.icns"
+        with tempfile.TemporaryDirectory() as temporary:
+            iconset = Path(temporary) / "MicWise.iconset"
+            iconset.mkdir()
+            for size in (16, 32, 128, 256, 512):
+                for scale in (1, 2):
+                    pixels = size * scale
+                    suffix = "@2x" if scale == 2 else ""
+                    run(
+                        [
+                            "sips",
+                            "-z",
+                            str(pixels),
+                            str(pixels),
+                            str(ICON_SOURCE),
+                            "--out",
+                            str(iconset / f"icon_{size}x{size}{suffix}.png"),
+                        ],
+                        cwd=PROJECT_ROOT,
+                    )
+            run(
+                ["iconutil", "-c", "icns", str(iconset), "-o", str(output)],
+                cwd=PROJECT_ROOT,
+            )
+    else:
+        from PIL import Image
 
-        if sys.platform == "darwin":
-            # Legacy ICNS files are not automatically clipped to the modern
-            # macOS app-icon silhouette or optically sized like modern icons.
-            # Place the artwork inside an inset platform-style enclosure.
-            enclosure_size = master.width - (MACOS_ICON_INSET * 2)
-            enclosure = master.resize(
-                (enclosure_size, enclosure_size),
-                Image.Resampling.LANCZOS,
-            )
-            master = Image.new("RGBA", master.size, (0, 0, 0, 0))
-            master.alpha_composite(
-                enclosure,
-                (MACOS_ICON_INSET, MACOS_ICON_INSET),
-            )
-
-            scale = 4
-            mask = Image.new("L", (master.width * scale, master.height * scale), 0)
-            ImageDraw.Draw(mask).rounded_rectangle(
-                (
-                    MACOS_ICON_INSET * scale,
-                    MACOS_ICON_INSET * scale,
-                    (master.width - MACOS_ICON_INSET) * scale - 1,
-                    (master.height - MACOS_ICON_INSET) * scale - 1,
-                ),
-                radius=185 * scale,
-                fill=255,
-            )
-            mask = mask.resize(master.size, Image.Resampling.LANCZOS)
-            master.putalpha(ImageChops.multiply(master.getchannel("A"), mask))
-            output = ICON_OUTPUT_DIRECTORY / "MicWise.icns"
-            master.save(output, format="ICNS")
-        else:
-            output = ICON_OUTPUT_DIRECTORY / "MicWise.ico"
-            master.save(
+        output = ICON_OUTPUT_DIRECTORY / "MicWise.ico"
+        with Image.open(ICON_SOURCE) as source:
+            source.convert("RGBA").save(
                 output,
                 format="ICO",
                 sizes=[
