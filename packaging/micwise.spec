@@ -160,7 +160,8 @@ else:
         info_plist={
             "CFBundleName": "MicWise",
             "CFBundleDisplayName": "Mic-Wise",
-            "CFBundleShortVersionString": version_info["VERSION"],
+            # The full release version, so Finder and About show e.g. 0.1.0-alpha.8.
+            "CFBundleShortVersionString": f"{version_info['VERSION']}-{version_info['RELEASE_LABEL']}",
             "CFBundleVersion": os.environ.get("MICWISE_BUILD_NUMBER", "1"),
             "LSMultipleInstancesProhibited": True,
             "LSMinimumSystemVersion": ".".join(map(str, minimum_macos)),

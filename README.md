@@ -60,7 +60,7 @@ python packaging/build.py
 This builds the frontend, then bundles the backend, the UI, and all native
 dependencies into a single artifact per platform:
 
-- **macOS**: `dist/MicWise-0.1.0-alpha.7-macOS-arm64.dmg`. macOS builds are
+- **macOS**: `dist/MicWise-0.1.0-alpha.8-macOS-arm64.dmg`. macOS builds are
   Apple silicon only and require macOS 14 or later; the release asset is
   `MicWise-macOS.dmg`.
   Open the disk image, drag `MicWise.app` to

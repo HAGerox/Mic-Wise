@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 
 from app.core.settings import MicWiseSettings
 from app.database.repository import (
@@ -99,6 +100,59 @@ def test_initialise_show_file_seeds_default_records(tmp_path) -> None:
             assert scenes[0].sync_osc_address == "/micwise/scene/1"
             assert scenes[0].sync_osc_argument is None
             assert scenes[0].sync_midi_pattern is None
+        finally:
+            await database.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_initialise_show_file_adds_columns_missing_from_older_show_files(tmp_path) -> None:
+    settings = build_settings(tmp_path)
+    # A show file saved before RChat, multi-listen, the floor plan and mic-check ticks.
+    connection = sqlite3.connect(settings.show_path)
+    connection.executescript(
+        """
+        CREATE TABLE settings (
+            id INTEGER PRIMARY KEY, sample_rate INTEGER NOT NULL, channel_count INTEGER NOT NULL,
+            buffer_duration_sec INTEGER NOT NULL, block_size INTEGER NOT NULL,
+            audio_source_mode VARCHAR(32) NOT NULL, audio_input_device VARCHAR(255),
+            master_gain_db FLOAT NOT NULL
+        );
+        CREATE TABLE channels (
+            id INTEGER PRIMARY KEY, number INTEGER NOT NULL, name VARCHAR(128) NOT NULL,
+            photo_path VARCHAR(512), input_index INTEGER, gain_db FLOAT NOT NULL,
+            is_record_enabled BOOLEAN NOT NULL, sort_index INTEGER NOT NULL
+        );
+        CREATE TABLE scenes (id INTEGER PRIMARY KEY, name VARCHAR(128) NOT NULL, order_index INTEGER NOT NULL);
+        CREATE TABLE scene_channels (
+            scene_id INTEGER NOT NULL, channel_id INTEGER NOT NULL, state VARCHAR(32) NOT NULL,
+            PRIMARY KEY (scene_id, channel_id)
+        );
+        INSERT INTO settings VALUES (1, 48000, 2, 300, 480, 'synthetic', NULL, -3.0);
+        INSERT INTO channels VALUES (1, 1, 'Lead', NULL, 0, 0.0, 1, 0), (2, 2, 'Band', NULL, 1, 0.0, 1, 1);
+        INSERT INTO scenes VALUES (1, 'Act 1', 0);
+        INSERT INTO scene_channels VALUES (1, 1, 'onstage');
+        """,
+    )
+    connection.close()
+
+    async def scenario() -> None:
+        database = DatabaseManager(settings.show_path)
+        try:
+            settings_row = await initialise_show_file(database, settings)
+            assert settings_row.master_gain_db == -3.0
+            assert settings_row.rchat_enabled is False
+            assert settings_row.rchat_username == "Mic-Wise"
+            assert settings_row.external_sync_osc_port == 53001
+            assert settings_row.updated_at is not None
+
+            channels = await list_channels(database)
+            assert [channel.name for channel in channels] == ["Lead", "Band"]
+            assert channels[0].position_x == 0.0
+
+            scene = await get_scene(database, scene_id=1)
+            assert scene is not None
+            assert [(row.state, row.checked) for row in scene.channel_assignments] == [("onstage", False)]
         finally:
             await database.dispose()
 
