@@ -60,8 +60,9 @@ python packaging/build.py
 This builds the frontend, then bundles the backend, the UI, and all native
 dependencies into a single artifact per platform:
 
-- **macOS**: `dist/MicWise-0.1.0-alpha.6-macOS-arm64.dmg` on Apple Silicon
-  (or an `x86_64.dmg` on Intel). Release builds require macOS 14 or later.
+- **macOS**: `dist/MicWise-0.1.0-alpha.6-macOS-arm64.dmg`. macOS builds are
+  Apple silicon only and require macOS 14 or later; the release asset is
+  `MicWise-macOS.dmg`.
   Open the disk image, drag `MicWise.app` to
   Applications, eject the image, and open the app. No Python or Node installation
   is needed. The operator interface opens in your default browser. Click the Dock
@@ -108,20 +109,14 @@ For macOS release builds, use a clean Python 3.11 environment as in release CI;
 Homebrew Python may impose a newer macOS requirement. The build derives the
 minimum macOS version from bundled native libraries.
 
-On Intel Macs, the current cryptography dependency builds from source. Install
-`openssl@3` and `rust` with Homebrew, then set `OPENSSL_STATIC=1` and
-`OPENSSL_DIR="$(brew --prefix openssl@3)"` when installing the backend requirements.
-This keeps the bundled crypto library independent of the build Mac's Homebrew
-installation. Release CI performs this setup automatically.
-
 The alpha release identity lives in `backend/app/version.py`; increment it for
 each release. `MICWISE_BUILD_NUMBER` supplies the macOS bundle build number.
 The installer includes a checksum and `dist/release-info.json` records the source
 revision, whether working-tree changes were included, and notarization status.
-The release workflow tests the software and builds separate Intel and Apple
-Silicon installers. This first alpha no longer migrates pre-alpha database
-schemas or imports version 1 showfiles, and removes retired RadioWorld field
-names and UI modes. The `hardware` UI/API alias remains supported and normalises to `sounddevice`.
+The release workflow tests the software and builds one Apple silicon macOS
+installer, `MicWise-macOS.dmg`, alongside the Windows and Linux builds. This
+first alpha no longer migrates pre-alpha database schemas or imports version 1
+showfiles, and removes retired RadioWorld field names and UI modes. The `hardware` UI/API alias remains supported and normalises to `sounddevice`.
 
 Standalone apps ignore working-directory `.env` files; explicit `MICWISE_*`
 environment variables still apply. Discovery is enabled by default. Stage Backup
