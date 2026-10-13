@@ -367,15 +367,56 @@ export function computeWaveformDisplayPoints(
   return shiftWaveformPoints(safePoints, pointShift, liveTailValue);
 }
 
-export function appendMeterHistoryPoint(
+export function appendMeterHistoryHops(
   history: number[],
-  nextValue: number,
+  historyEndHop: number | null,
+  startHop: number,
+  values: number[],
   maxPoints: number,
 ): number[] {
-  const safeHistory = Array.isArray(history) ? history : [];
   const safeMaxPoints = Math.max(1, Math.floor(maxPoints));
-  const safeValue = Math.max(0, Number.isFinite(nextValue) ? nextValue : 0);
-  return [...safeHistory, safeValue].slice(-safeMaxPoints);
+  const safeValues = (Array.isArray(values) ? values : []).map((value) => (
+    Math.max(0, Number.isFinite(value) ? value : 0)
+  ));
+  // A history that does not continue the server's hop grid (first message or an
+  // engine restart) is replaced; a forward gap is filled with silence so every
+  // value keeps its place on the time axis.
+  if (historyEndHop === null || startHop < historyEndHop || !Array.isArray(history)) {
+    return safeValues.slice(-safeMaxPoints);
+  }
+  const gap = Math.min(startHop - historyEndHop, safeMaxPoints);
+  return [...history, ...Array<number>(gap).fill(0), ...safeValues].slice(-safeMaxPoints);
+}
+
+export function poolRmsHistory(
+  history: number[],
+  historyEndHop: number | null,
+  hopsPerPoint: number,
+  pointCount: number,
+): number[] {
+  const safePointCount = Math.max(1, Math.floor(pointCount));
+  const safeHopsPerPoint = Math.max(1, Math.floor(hopsPerPoint));
+  const pooled = Array<number>(safePointCount).fill(0);
+  if (historyEndHop === null || !Array.isArray(history) || history.length === 0) {
+    return pooled;
+  }
+
+  // Bins sit on absolute hop boundaries, so finished bins never shift as new
+  // hops arrive; only the newest (partial) bin keeps updating.
+  const historyStartHop = historyEndHop - history.length;
+  const lastBin = Math.floor((historyEndHop - 1) / safeHopsPerPoint);
+  for (let pointIndex = 0; pointIndex < safePointCount; pointIndex += 1) {
+    const bin = lastBin - (safePointCount - 1 - pointIndex);
+    const binStart = Math.max(bin * safeHopsPerPoint, historyStartHop);
+    const binEnd = Math.min((bin + 1) * safeHopsPerPoint, historyEndHop);
+    let energy = 0;
+    for (let hop = binStart; hop < binEnd; hop += 1) {
+      const value = history[hop - historyStartHop];
+      energy += Number.isFinite(value) ? value * value : 0;
+    }
+    pooled[pointIndex] = binEnd > binStart ? Math.sqrt(energy / (binEnd - binStart)) : 0;
+  }
+  return pooled;
 }
 
 export function normaliseNumberOrder(candidateIds: number[], fallbackIds: number[]): number[] {
@@ -480,4 +521,76 @@ export function describeImportSummary(summary: {
     parts.push(`${summary.assets} photos`);
   }
   return `Imported ${parts.join(', ')}`;
+}
+
+export interface PatchMatrixCell {
+  row: number;
+  column: number;
+}
+
+export function getPatchStrokeCells(
+  anchor: PatchMatrixCell,
+  current: PatchMatrixCell,
+  columnCount: number,
+): PatchMatrixCell[] {
+  if (anchor.row === current.row) {
+    return [{ row: current.row, column: current.column }];
+  }
+
+  // Dragging across rows lays a 1:1 diagonal from the anchor cell; the drag
+  // direction picks ascending or descending inputs, and rows decide the length.
+  const rowStep = current.row > anchor.row ? 1 : -1;
+  const columnStep = current.column < anchor.column ? -1 : 1;
+  const cells: PatchMatrixCell[] = [];
+  for (let offset = 0; offset <= Math.abs(current.row - anchor.row); offset += 1) {
+    const column = anchor.column + (offset * columnStep);
+    if (column < 0 || column >= columnCount) {
+      break;
+    }
+    cells.push({ row: anchor.row + (offset * rowStep), column });
+  }
+  return cells;
+}
+
+export type PatchStrokeMode = 'patch' | 'unpatch';
+
+/** A stroke that starts on a patched cell erases; anywhere else it patches. */
+export function getPatchStrokeMode(patch: Array<number | null>, anchor: PatchMatrixCell): PatchStrokeMode {
+  return patch[anchor.row] === anchor.column ? 'unpatch' : 'patch';
+}
+
+export function applyPatchStroke(
+  patch: Array<number | null>,
+  cells: PatchMatrixCell[],
+  mode: PatchStrokeMode,
+): Array<number | null> {
+  const nextPatch = [...patch];
+  for (const cell of cells) {
+    if (cell.row < 0 || cell.row >= nextPatch.length) {
+      continue;
+    }
+    if (mode === 'patch') {
+      nextPatch[cell.row] = cell.column;
+    } else if (nextPatch[cell.row] === cell.column) {
+      nextPatch[cell.row] = null;
+    }
+  }
+  return nextPatch;
+}
+
+/** Appends cells not already in the stroke, keeping the order they were visited. */
+export function appendVisitedPatchCells(
+  visited: PatchMatrixCell[],
+  cells: PatchMatrixCell[],
+): PatchMatrixCell[] {
+  const seen = new Set(visited.map((cell) => `${cell.row}:${cell.column}`));
+  const next = [...visited];
+  for (const cell of cells) {
+    const key = `${cell.row}:${cell.column}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      next.push(cell);
+    }
+  }
+  return next.length === visited.length ? visited : next;
 }

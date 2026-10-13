@@ -178,11 +178,15 @@ export interface MeterChannelSnapshot {
   channel: number;
   rms: number;
   peak: number;
+  /** RMS of each fixed history hop completed since the previous snapshot, oldest first. */
+  rms_history?: number[];
 }
 
 export interface MeterSnapshotResponse {
   write_head: number;
   window_frames: number;
+  history_start_frame?: number;
+  history_hop_frames?: number;
   channels: MeterChannelSnapshot[];
 }
 

@@ -47,6 +47,7 @@ function renderSceneSetup(onSaveSceneAssignments = vi.fn().mockResolvedValue(und
       onSaveSettings={vi.fn().mockResolvedValue(undefined)}
       onAddChannel={vi.fn().mockResolvedValue(undefined)}
       onSaveChannel={vi.fn().mockResolvedValue(undefined)}
+      onPatchChannels={vi.fn().mockResolvedValue(undefined)}
       onRemoveChannel={vi.fn().mockResolvedValue(undefined)}
       onAddScene={vi.fn().mockResolvedValue(undefined)}
       onSetActiveScene={vi.fn().mockResolvedValue(undefined)}

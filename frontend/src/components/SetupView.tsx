@@ -7,6 +7,8 @@ import {
   getScenePaintStrokeState,
 } from '../lib/ui-logic';
 import { clampGainDb, sortChannels, sortScenes } from '../lib/format';
+import { PatchMatrix } from './PatchMatrix';
+import type { ChannelPatchChange } from './PatchMatrix';
 import type {
   AudioInputDeviceResponse,
   ChannelResponse,
@@ -110,54 +112,54 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove, onUploadPh
     void onSave(channel.id, nextDraft);
   };
 
+  const savePhoto = (photoPath: string | null): void => {
+    const nextDraft = { ...draft, photo_path: photoPath ?? '' };
+    setDraft(nextDraft);
+    void onSave(channel.id, { ...nextDraft, photo_path: photoPath });
+  };
+
   return (
     <tr data-channel-id={String(channel.id)}>
-      <td>CH {channel.number}</td>
+      <td className="program-channel-number">{channel.number}</td>
       <td>
-        <div className="program-name-field">
-          <input
-            type="text"
-            data-field="name"
-            value={draft.name}
-            onChange={(event) => {
-              const nextDraft = { ...draft, name: event.target.value };
-              setDraft(nextDraft);
-              scheduleSave(nextDraft);
-            }}
-            onBlur={() => commitSave()}
-          />
-        </div>
+        <input
+          type="text"
+          data-field="name"
+          aria-label={`Name for CH ${channel.number}`}
+          value={draft.name}
+          onChange={(event) => {
+            const nextDraft = { ...draft, name: event.target.value };
+            setDraft(nextDraft);
+            scheduleSave(nextDraft);
+          }}
+          onBlur={() => commitSave()}
+        />
       </td>
       <td>
         <div className="program-photo-field">
-          <span
-            className={`program-photo-preview ${draft.photo_path ? 'has-photo' : ''}`}
-            style={draft.photo_path ? { backgroundImage: `url(${JSON.stringify(draft.photo_path)})` } : undefined}
-            aria-hidden="true"
-          ></span>
-          <input
-            type="text"
-            data-field="photo_path"
-            aria-label={`Photo URL for ${channel.name}`}
-            placeholder="Image URL, or upload a photo"
-            value={draft.photo_path}
-            onChange={(event) => {
-              setDraft({ ...draft, photo_path: event.target.value });
-            }}
-            onBlur={() => {
-              const photoPath = draft.photo_path.trim();
-              const nextDraft = { ...draft, photo_path: photoPath };
-              setDraft(nextDraft);
-              void onSave(channel.id, { ...nextDraft, photo_path: photoPath || null });
-            }}
-          />
           <button
             type="button"
-            className="secondary program-photo-upload"
+            className={`program-photo-button ${draft.photo_path ? 'has-photo' : ''}`}
+            style={draft.photo_path ? { backgroundImage: `url(${JSON.stringify(draft.photo_path)})` } : undefined}
+            aria-label={`${draft.photo_path ? 'Replace' : 'Upload'} photo for ${channel.name}`}
+            title={draft.photo_path ? 'Replace photo' : 'Upload photo'}
             onClick={() => photoInputRef.current?.click()}
           >
-            Upload
+            {!draft.photo_path ? (
+              <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"></path></svg>
+            ) : null}
           </button>
+          {draft.photo_path ? (
+            <button
+              type="button"
+              className="program-photo-clear"
+              aria-label={`Remove photo for ${channel.name}`}
+              title="Remove photo"
+              onClick={() => savePhoto(null)}
+            >
+              Clear
+            </button>
+          ) : null}
           <input
             ref={photoInputRef}
             className="is-hidden"
@@ -171,22 +173,19 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove, onUploadPh
               }
               setPhotoError(null);
               void onUploadPhoto(file)
-                .then((asset) => {
-                  const nextDraft = { ...draft, photo_path: asset.photo_path };
-                  setDraft(nextDraft);
-                  return onSave(channel.id, { ...nextDraft, photo_path: asset.photo_path });
-                })
+                .then((asset) => savePhoto(asset.photo_path))
                 .catch((error: unknown) => {
                   setPhotoError(error instanceof Error ? error.message : 'Photo upload failed');
                 });
             }}
           />
-          {photoError ? <span className="program-photo-error">{photoError}</span> : null}
+          {photoError ? <span className="program-photo-error" title={photoError}>Upload failed</span> : null}
         </div>
       </td>
       <td>
         <select
           data-field="input_index"
+          aria-label={`Input for CH ${channel.number}`}
           value={draft.input_index ?? ''}
           onChange={(event) => {
             const nextDraft = {
@@ -208,6 +207,7 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove, onUploadPh
           <input
             type="number"
             data-field="gain_db"
+            aria-label={`Trim for CH ${channel.number}`}
             min={-24}
             max={24}
             step={1}
@@ -232,11 +232,12 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove, onUploadPh
           <span>dB</span>
         </div>
       </td>
-      <td className="checkbox-cell">
-        <label className="record-toggle" aria-label="Rolling record enabled">
+      <td>
+        <label className="record-toggle" title="Rolling record">
           <input
             type="checkbox"
             data-field="is_record_enabled"
+            aria-label={`Rolling record for CH ${channel.number}`}
             checked={draft.is_record_enabled}
             onChange={(event) => {
               const nextDraft = {
@@ -247,11 +248,22 @@ function ProgramRow({ channel, availableInputCount, onSave, onRemove, onUploadPh
               scheduleSave(nextDraft, 0);
             }}
           />
-          <span className="record-toggle-ui" aria-hidden="true"></span>
+          <span className="record-toggle-ui" aria-hidden="true">
+            <span className="record-toggle-dot"></span>
+            {draft.is_record_enabled ? 'On' : 'Off'}
+          </span>
         </label>
       </td>
-      <td>
-        <button type="button" className="button-danger" onClick={() => void onRemove(channel.id)}>Remove</button>
+      <td className="program-remove-cell">
+        <button
+          type="button"
+          className="icon-button program-remove-button"
+          aria-label={`Remove CH ${channel.number}`}
+          title="Remove channel"
+          onClick={() => void onRemove(channel.id)}
+        >
+          <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"></path></svg>
+        </button>
       </td>
     </tr>
   );
@@ -271,6 +283,7 @@ interface SetupViewProps {
   onSaveSettings: (payload: SettingsUpdateRequest) => Promise<void>;
   onAddChannel: () => Promise<void>;
   onSaveChannel: (channelId: number, payload: ChannelUpdateRequest) => Promise<void>;
+  onPatchChannels: (changes: ChannelPatchChange[]) => Promise<void>;
   onRemoveChannel: (channelId: number) => Promise<void>;
   onAddScene: () => Promise<void>;
   onSetActiveScene: (sceneId: number) => Promise<void>;
@@ -305,6 +318,7 @@ export function SetupView({
   onSaveSettings,
   onAddChannel,
   onSaveChannel,
+  onPatchChannels,
   onRemoveChannel,
   onAddScene,
   onSetActiveScene,
@@ -328,6 +342,11 @@ export function SetupView({
     () => getSelectedDeviceDetails(audioDevices, settings?.audio_input_device),
     [audioDevices, settings?.audio_input_device],
   );
+  const inputSourceLabel = settings?.audio_source_mode === 'sounddevice'
+    ? selectedDevice
+      ? `${selectedDevice.name} · ${selectedDevice.hostapi_name}`
+      : 'System default input'
+    : 'Synthetic test signal';
   const [masterGainValue, setMasterGainValue] = useState('0');
   const [runtimeForm, setRuntimeForm] = useState({
     audio_source_mode: 'synthetic' as SettingsResponse['audio_source_mode'],
@@ -358,6 +377,7 @@ export function SetupView({
     sync_midi_pattern: '',
   });
   const [sceneAssignments, setSceneAssignments] = useState<Record<number, SceneAssignmentState>>({});
+  const [channelsLayout, setChannelsLayout] = useState<'sheet' | 'matrix'>('sheet');
   const [sceneStateBrush, setSceneStateBrush] = useState<SceneAssignmentState>('onstage');
   const sceneAssignmentsRef = useRef<Record<number, SceneAssignmentState>>({});
   const scenePaintStrokeRef = useRef<ScenePaintStroke | null>(null);
@@ -712,26 +732,50 @@ export function SetupView({
           </section>
 
           <section id="setup-channels-section" className={`setup-panel panel-card ${setupTab === 'channels' ? '' : 'is-hidden'}`}>
-        <div className="panel-heading panel-heading--nested">
-          <div>
-            <h3>Channel patch sheet</h3>
+        <div className="panel-heading panel-heading--nested channel-view-heading">
+          <div className="view-tabs" role="tablist" aria-label="Channel view">
+            {([
+              { layout: 'sheet', label: 'Channel list', icon: 'M3 4h10M3 8h10M3 12h10' },
+              { layout: 'matrix', label: 'Patch matrix', icon: 'M3 3h10v10H3zM3 8h10M8 3v10' },
+            ] as const).map(({ layout, label, icon }) => (
+              <button
+                key={layout}
+                type="button"
+                role="tab"
+                className={`view-tab ${channelsLayout === layout ? 'is-active' : ''}`}
+                aria-selected={channelsLayout === layout}
+                onClick={() => setChannelsLayout(layout)}
+              >
+                <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true"><path d={icon}></path></svg>
+                {label}
+              </button>
+            ))}
           </div>
           <div className="panel-heading-actions">
             <button id="add-channel" type="button" onClick={() => void onAddChannel()}>Add RF path</button>
           </div>
         </div>
 
+        {channelsLayout === 'matrix' ? (
+          <PatchMatrix
+            channels={orderedChannels}
+            inputCount={Math.max(settings?.channel_count ?? 0, 0)}
+            inputSourceLabel={inputSourceLabel}
+            onPatchChannels={onPatchChannels}
+            onRenameChannel={(channelId, name) => onSaveChannel(channelId, { name })}
+          />
+        ) : (
         <div className="table-shell">
           <table className="program-table">
             <thead>
               <tr>
-                <th>Channel</th>
+                <th className="program-channel-number">CH</th>
                 <th>Name</th>
-                <th>Photo</th>
-                <th>Input</th>
-                <th>Trim</th>
-                <th>Record</th>
-                <th>Remove</th>
+                <th className="program-photo-column">Photo</th>
+                <th className="program-input-column">Input</th>
+                <th className="program-trim-column">Trim</th>
+                <th className="program-record-column">Record</th>
+                <th className="program-remove-cell"><span className="sr-only">Remove</span></th>
               </tr>
             </thead>
             <tbody id="program-table-body">
@@ -748,6 +792,7 @@ export function SetupView({
             </tbody>
           </table>
         </div>
+        )}
           </section>
 
           <section id="setup-scenes-section" className={`setup-panel panel-card ${setupTab === 'scenes' ? '' : 'is-hidden'}`}>

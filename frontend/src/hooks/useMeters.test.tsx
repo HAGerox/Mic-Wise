@@ -23,6 +23,17 @@ class MockWebSocket {
     };
     this.onmessage?.({ data: JSON.stringify(snapshot) } as MessageEvent);
   }
+
+  sendHistory(startFrame: number, rmsHistory: number[]): void {
+    const snapshot: MeterSnapshotResponse = {
+      write_head: startFrame,
+      window_frames: 100,
+      history_start_frame: startFrame,
+      history_hop_frames: 50,
+      channels: [{ channel: 1, peak: 0, rms: 0, rms_history: rmsHistory }],
+    };
+    this.onmessage?.({ data: JSON.stringify(snapshot) } as MessageEvent);
+  }
 }
 
 describe('useMeters', () => {
@@ -53,14 +64,26 @@ describe('useMeters', () => {
     rerender({ enabled: false });
     expect(firstSocket.close).toHaveBeenCalledOnce();
     expect(firstSocket.onmessage).toBeNull();
-    const pausedHistory = result.current.meterHistoryMap;
+    const pausedHistory = result.current.meterHistory;
     act(() => firstSocket.sendSnapshot(0.9));
-    expect(result.current.meterHistoryMap).toBe(pausedHistory);
+    expect(result.current.meterHistory).toBe(pausedHistory);
 
     rerender({ enabled: true });
     expect(MockWebSocket.instances).toHaveLength(2);
     act(() => MockWebSocket.instances[1].sendSnapshot(0.5));
     expect(result.current.meterMap.get(1)?.peak).toBe(0.5);
+  });
+
+  it('builds RMS history from server hops rather than one point per message', () => {
+    const { result } = renderHook(() => useMeters({}));
+    const socket = MockWebSocket.instances[0];
+    act(() => socket.sendSnapshot(0.9));
+    expect(result.current.meterHistory.endHop).toBeNull();
+
+    act(() => socket.sendHistory(500, [0.1, 0.2]));
+    act(() => socket.sendHistory(600, [0.3]));
+    expect(result.current.meterHistory.endHop).toBe(13);
+    expect(result.current.meterHistory.channels.get(1)).toEqual([0.1, 0.2, 0.3]);
   });
 
   it('keeps one subscription across ordinary rerenders and closes it on unmount', () => {

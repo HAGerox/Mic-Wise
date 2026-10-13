@@ -4,7 +4,8 @@ import Sortable from 'sortablejs';
 
 import { ChannelCard } from './ChannelCard';
 import { dbToLinearGain, meterRatioFromLinear, linearToDbfs, sortChannels } from '../lib/format';
-import { getShowChannelVisualState } from '../lib/ui-logic';
+import { getShowChannelVisualState, poolRmsHistory } from '../lib/ui-logic';
+import { METER_HISTORY_HOPS_PER_POINT, METER_TRACE_POINTS, type MeterHistory } from '../hooks/useMeters';
 import type { AudioAlertResponse, ChannelResponse, MeterChannelSnapshot, SceneAssignmentState, SceneResponse } from '../types/api';
 import type { ActiveView, ChannelCardState, ChannelSelectionModifiers, ChannelStatusTone, ShowChannelVisualState } from '../types/ui';
 
@@ -52,7 +53,7 @@ function getStatusTone(
 interface ChannelGridProps {
   channels: ChannelResponse[];
   meterMap: Map<number, MeterChannelSnapshot>;
-  meterHistoryMap: Map<number, number[]>;
+  meterHistory: MeterHistory;
   activeAlertsByChannelId: Map<number, AudioAlertResponse>;
   selectedChannelIds: Set<number>;
   activeView: ActiveView;
@@ -68,7 +69,7 @@ interface ChannelGridProps {
 export function ChannelGrid({
   channels,
   meterMap,
-  meterHistoryMap,
+  meterHistory,
   activeAlertsByChannelId,
   selectedChannelIds,
   activeView,
@@ -91,13 +92,18 @@ export function ChannelGrid({
       const meter = channel.input_index === null || channel.input_index === undefined
         ? null
         : meterMap.get(channel.input_index + 1) ?? null;
-      const meterHistory = channel.input_index === null || channel.input_index === undefined
+      const channelHistory = channel.input_index === null || channel.input_index === undefined
         ? []
-        : meterHistoryMap.get(channel.input_index + 1) ?? [];
+        : meterHistory.channels.get(channel.input_index + 1) ?? [];
       const combinedGainLinear = dbToLinearGain((channel.gain_db ?? 0) + masterGainDb);
       const rmsLinear = meter ? Math.max(0, meter.rms * combinedGainLinear) : 0;
       const peakLinear = meter ? Math.max(rmsLinear, meter.peak * combinedGainLinear) : 0;
-      const historyRatios = meterHistory.map((value) => meterRatioFromLinear(value * combinedGainLinear));
+      const historyRatios = poolRmsHistory(
+        channelHistory,
+        meterHistory.endHop,
+        METER_HISTORY_HOPS_PER_POINT,
+        METER_TRACE_POINTS,
+      ).map((value) => meterRatioFromLinear(value * combinedGainLinear));
       const visualState = getVisualState(activeView, activeScene, checklist, channel.id);
       const sceneAssignmentState = activeView === 'show'
         ? getSceneAssignmentState(activeScene, channel.id)
@@ -130,7 +136,7 @@ export function ChannelGrid({
     activeView,
     checklist,
     masterGainDb,
-    meterHistoryMap,
+    meterHistory,
     meterMap,
     orderedChannels,
     selectedChannelIds,

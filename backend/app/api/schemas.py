@@ -260,6 +260,7 @@ class MeterChannelSnapshot(BaseModel):
     channel: int
     rms: float
     peak: float
+    rms_history: list[float] = Field(default_factory=list)
 
 
 class MeterSnapshotResponse(BaseModel):
@@ -267,6 +268,8 @@ class MeterSnapshotResponse(BaseModel):
 
     write_head: int
     window_frames: int
+    history_start_frame: int = 0
+    history_hop_frames: int = 0
     channels: list[MeterChannelSnapshot]
 
 

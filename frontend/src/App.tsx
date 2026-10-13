@@ -20,6 +20,7 @@ import { getSyncStatus } from './api/sync';
 import { AlertToasts } from './components/AlertToasts';
 import { ChannelGrid } from './components/ChannelGrid';
 import { ChannelModal } from './components/ChannelModal';
+import type { ChannelPatchChange } from './components/PatchMatrix';
 import { SetupView } from './components/SetupView';
 import { Toolbar } from './components/Toolbar';
 import { useAudioTransport } from './hooks/useAudioTransport';
@@ -303,7 +304,7 @@ function AppContent(): JSX.Element {
     onStatusChange: setStatusText,
   });
 
-  const { meterMap, meterHistoryMap } = useMeters({
+  const { meterMap, meterHistory } = useMeters({
     enabled: isMonitorLikeView,
     initialSnapshot: latestMetersQuery.data,
     onOpen: () => {
@@ -750,6 +751,28 @@ function AppContent(): JSX.Element {
     }
   }, [orderedSelection, queryClient, state.modalScrubSeconds, state.selectedChannelIds, syncListening]);
 
+  const handlePatchChannels = useCallback(async (changes: ChannelPatchChange[]): Promise<void> => {
+    let updatedChannels: ChannelResponse[];
+    try {
+      updatedChannels = await Promise.all(
+        changes.map(({ channelId, inputIndex }) => updateChannel(channelId, { input_index: inputIndex })),
+      );
+    } catch (error) {
+      // Some rows may have saved before the failure; resync rather than guess.
+      await queryClient.invalidateQueries({ queryKey: ['channels'] });
+      throw error;
+    }
+    const updatedById = new Map(updatedChannels.map((channel) => [channel.id, channel]));
+    queryClient.setQueryData<ChannelResponse[]>(
+      ['channels'],
+      (current = []) => current.map((channel) => updatedById.get(channel.id) ?? channel),
+    );
+
+    if (changes.some(({ channelId }) => state.selectedChannelIds.has(channelId))) {
+      await syncListening(orderedSelection(), state.modalScrubSeconds);
+    }
+  }, [orderedSelection, queryClient, state.modalScrubSeconds, state.selectedChannelIds, syncListening]);
+
   const handleRemoveChannel = useCallback(async (channelId: number): Promise<void> => {
     await deleteChannel(channelId);
     clearUndoHistory();
@@ -988,7 +1011,7 @@ function AppContent(): JSX.Element {
             {isMonitorLikeView && <ChannelGrid
               channels={channels}
               meterMap={meterMap}
-              meterHistoryMap={meterHistoryMap}
+              meterHistory={meterHistory}
               activeAlertsByChannelId={activeAlertsByChannelId}
               selectedChannelIds={state.selectedChannelIds}
               activeView={state.activeView}
@@ -1036,6 +1059,7 @@ function AppContent(): JSX.Element {
         onSaveSettings={handleSaveSettings}
         onAddChannel={handleAddChannel}
         onSaveChannel={handleSaveChannel}
+        onPatchChannels={handlePatchChannels}
         onRemoveChannel={handleRemoveChannel}
         onAddScene={handleAddScene}
         onSetActiveScene={handleSetActiveScene}

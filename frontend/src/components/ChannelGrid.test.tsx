@@ -55,7 +55,7 @@ function renderGrid(channels: ChannelResponse[], overrides: Partial<Parameters<t
   const props: Parameters<typeof ChannelGrid>[0] = {
     channels,
     meterMap: new Map(),
-    meterHistoryMap: new Map(),
+    meterHistory: { endHop: null, channels: new Map() },
     activeAlertsByChannelId: new Map(),
     selectedChannelIds: new Set(),
     activeView: 'monitor',
@@ -107,7 +107,7 @@ describe('ChannelGrid layout ordering', () => {
       <ChannelGrid
         channels={[buildChannel(1, 0), buildChannel(2, 1), buildChannel(3, 2)]}
         meterMap={new Map()}
-        meterHistoryMap={new Map()}
+        meterHistory={{ endHop: null, channels: new Map() }}
         activeAlertsByChannelId={new Map()}
         selectedChannelIds={new Set()}
         activeView="monitor"
@@ -141,7 +141,7 @@ describe('ChannelGrid layout ordering', () => {
       <ChannelGrid
         channels={[buildChannel(1, 0)]}
         meterMap={new Map()}
-        meterHistoryMap={new Map()}
+        meterHistory={{ endHop: null, channels: new Map() }}
         activeAlertsByChannelId={new Map()}
         selectedChannelIds={new Set()}
         activeView="monitor"

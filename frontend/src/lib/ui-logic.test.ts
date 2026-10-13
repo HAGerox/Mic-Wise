@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  appendMeterHistoryPoint,
+  appendMeterHistoryHops,
+  appendVisitedPatchCells,
+  applyPatchStroke,
   buildEnergyLinePath,
   buildWaveformRulerMarks,
   buildExternalSyncStatusText,
@@ -12,12 +14,15 @@ import {
   getSceneChecklistFromAssignments,
   getSceneChecklistStats,
   getChannelGridNavigationTarget,
+  getPatchStrokeCells,
+  getPatchStrokeMode,
   getPointerStrokeSamplePoints,
   getScenePaintStrokeState,
   getChannelSelectionAfterInteraction,
   getShowChannelVisualState,
   maxPoolValues,
   normaliseNumberOrder,
+  poolRmsHistory,
   normaliseActiveView,
   resolveActiveSceneId,
   shiftWaveformPoints,
@@ -214,9 +219,28 @@ describe('ui-logic helpers', () => {
     expect(computeWaveformDisplayPoints([], 500, 10, 12)).toEqual([]);
   });
 
-  it('appendMeterHistoryPoint keeps a capped sliding window', () => {
-    expect(appendMeterHistoryPoint([0.1, 0.2], 0.3, 2)).toEqual([0.2, 0.3]);
-    expect(appendMeterHistoryPoint([], -1, 3)).toEqual([0]);
+  it('appendMeterHistoryHops keeps a capped window on the server hop grid', () => {
+    expect(appendMeterHistoryHops([0.1, 0.2], 10, 10, [0.3], 2)).toEqual([0.2, 0.3]);
+    expect(appendMeterHistoryHops([], null, 4, [-1, Number.NaN], 3)).toEqual([0, 0]);
+    // Missed hops become silence so later values keep their time position.
+    expect(appendMeterHistoryHops([0.1], 5, 7, [0.4], 5)).toEqual([0.1, 0, 0, 0.4]);
+    // A grid that restarts behind the history (engine restart) replaces it.
+    expect(appendMeterHistoryHops([0.1, 0.2], 50, 3, [0.5], 5)).toEqual([0.5]);
+  });
+
+  it('poolRmsHistory combines hops by energy into bins fixed to absolute time', () => {
+    // Hops 4..9; bins of 3 are [3,4,5] (hop 3 missing), [6,7,8] and partial [9].
+    const history = [0.3, 0.4, 0, 0, 0.6, 0.5];
+    const pooled = poolRmsHistory(history, 10, 3, 4);
+    expect(pooled[0]).toBe(0);
+    expect(pooled[1]).toBeCloseTo(Math.sqrt((0.09 + 0.16) / 2));
+    expect(pooled[2]).toBeCloseTo(Math.sqrt(0.36 / 3));
+    expect(pooled[3]).toBeCloseTo(0.5);
+
+    // One more hop only refines the partial bin; finished bins are unchanged.
+    const next = poolRmsHistory([...history, 0.5], 11, 3, 4);
+    expect(next.slice(0, 3)).toEqual(pooled.slice(0, 3));
+    expect(poolRmsHistory([], null, 3, 2)).toEqual([0, 0]);
   });
 
   it('normaliseNumberOrder falls back when drag ordering is partial or invalid', () => {
@@ -261,5 +285,40 @@ describe('backup and checklist helpers', () => {
     expect(describeImportSummary({ channels: 4, scenes: 2, assets: 3 })).toBe(
       'Imported 4 channels, 2 scenes, 3 photos',
     );
+  });
+
+  it('getPatchStrokeCells lays a 1:1 diagonal from the anchor cell', () => {
+    expect(getPatchStrokeCells({ row: 0, column: 2 }, { row: 3, column: 0 }, 8)).toEqual([
+      { row: 0, column: 2 },
+      { row: 1, column: 1 },
+      { row: 2, column: 0 },
+    ]);
+    expect(getPatchStrokeCells({ row: 4, column: 4 }, { row: 2, column: 9 }, 6)).toEqual([
+      { row: 4, column: 4 },
+      { row: 3, column: 5 },
+    ]);
+    // Straight down still runs ascending inputs; within one row it follows the pointer.
+    expect(getPatchStrokeCells({ row: 0, column: 0 }, { row: 2, column: 0 }, 8).map((cell) => cell.column)).toEqual([0, 1, 2]);
+    expect(getPatchStrokeCells({ row: 1, column: 0 }, { row: 1, column: 5 }, 8)).toEqual([{ row: 1, column: 5 }]);
+  });
+
+  it('applyPatchStroke patches each stroke row and erases only matching cells when unpatching', () => {
+    expect(applyPatchStroke([null, 5, null], [{ row: 0, column: 0 }, { row: 1, column: 1 }], 'patch')).toEqual([0, 1, null]);
+    expect(applyPatchStroke([3, null], [{ row: 0, column: 1 }], 'patch')).toEqual([1, null]);
+    expect(applyPatchStroke([3, 4, 2], [{ row: 0, column: 3 }, { row: 1, column: 3 }, { row: 2, column: 2 }], 'unpatch'))
+      .toEqual([null, 4, null]);
+  });
+
+  it('getPatchStrokeMode unpatches when the stroke starts on a patched cell', () => {
+    expect(getPatchStrokeMode([3, null], { row: 0, column: 3 })).toBe('unpatch');
+    expect(getPatchStrokeMode([3, null], { row: 0, column: 2 })).toBe('patch');
+    expect(getPatchStrokeMode([3, null], { row: 1, column: 0 })).toBe('patch');
+  });
+
+  it('appendVisitedPatchCells keeps each visited cell once in visit order', () => {
+    const visited = [{ row: 0, column: 0 }];
+    expect(appendVisitedPatchCells(visited, [{ row: 0, column: 0 }])).toBe(visited);
+    expect(appendVisitedPatchCells(visited, [{ row: 1, column: 0 }, { row: 0, column: 0 }, { row: 1, column: 1 }]))
+      .toEqual([{ row: 0, column: 0 }, { row: 1, column: 0 }, { row: 1, column: 1 }]);
   });
 });
