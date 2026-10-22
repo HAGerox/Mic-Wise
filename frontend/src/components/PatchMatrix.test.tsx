@@ -18,9 +18,9 @@ describe('PatchMatrix', () => {
     cleanup();
   });
 
-  function renderMatrix(channels: ChannelResponse[], overrides: Partial<{ onRenameChannel: ReturnType<typeof vi.fn> }> = {}) {
+  function renderMatrix(channels: ChannelResponse[], overrides: Partial<{ onRenameChannel: (channelId: number, name: string) => Promise<void> }> = {}) {
     const onPatchChannels = vi.fn().mockResolvedValue(undefined);
-    const onRenameChannel = overrides.onRenameChannel ?? vi.fn().mockResolvedValue(undefined);
+    const onRenameChannel = overrides.onRenameChannel ?? vi.fn<(channelId: number, name: string) => Promise<void>>().mockResolvedValue(undefined);
     render(
       <PatchMatrix
         channels={channels}

@@ -17,3 +17,8 @@ python-osc
 prometheus-client
 pytest
 httpx
+
+# Security baselines for bundled HTTPS clients.
+certifi>=2026.10.19
+pillow>=13.0.0
+urllib3>=2.8.0

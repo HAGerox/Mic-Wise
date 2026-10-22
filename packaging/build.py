@@ -130,6 +130,7 @@ def prepare_app_icon() -> None:
 
 def build_app() -> None:
     ensure_build_dependencies()
+    run([sys.executable, str(PROJECT_ROOT / "scripts" / "check-python-security.py")], PROJECT_ROOT)
     prepare_app_icon()
     run(
         [
@@ -185,6 +186,8 @@ def build_app() -> None:
                  "--timestamp", "--entitlements", str(PROJECT_ROOT / "packaging" / "entitlements.plist"),
                  str(app)], cwd=PROJECT_ROOT)
         run(["codesign", "--verify", "--deep", "--strict", str(app)], cwd=PROJECT_ROOT)
+        run([sys.executable, str(PROJECT_ROOT / "scripts" / "check-python-security.py"),
+             str(app)], PROJECT_ROOT)
 
         # PyInstaller uses this directory while assembling the .app. The app
         # bundle is the sole distributable, so do not leave a second copy.
