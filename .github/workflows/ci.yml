@@ -31,12 +31,19 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          python-version: "3.11.17"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
+          version: "0.13.5"
+      - name: Prepare patched Python
+        shell: bash
+        run: |
+          uv venv --python 3.11.17 --seed .release-venv
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            echo "$GITHUB_WORKSPACE/.release-venv/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$GITHUB_WORKSPACE/.release-venv/bin" >> "$GITHUB_PATH"
+          fi
 
       - name: Install system audio library
         run: sudo apt-get update && sudo apt-get install --yes libportaudio2
