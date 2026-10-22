@@ -425,7 +425,15 @@ def test_show_archive_round_trips_photos(tmp_path) -> None:
             ] == [(channels[0].id, "off", True)]
 
             reexported = await export_show_archive(database, settings)
-            assert reexported == archive_bytes
+            # ZIP member timestamps can cross a two-second boundary on slower
+            # runners; the round trip must preserve member names and contents.
+            import io
+            import zipfile
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as original_archive, \
+                    zipfile.ZipFile(io.BytesIO(reexported)) as restored_archive:
+                assert {name: original_archive.read(name) for name in original_archive.namelist()} == {
+                    name: restored_archive.read(name) for name in restored_archive.namelist()
+                }
         finally:
             await database.dispose()
 
